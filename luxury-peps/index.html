@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Luxury Peps — Research-Grade Peptides</title>
+    <meta name="description" content="Research-grade peptides supplied for laboratory and research use only. Third-party tested with per-batch certificates of analysis." />
+    <meta name="theme-color" content="#0A0705" />
+    <style>
+      html, body { margin: 0; padding: 0; background: #0A0705; }
+      html, body, #root { width: 100%; min-height: 100%; }
+      body { overflow-x: hidden; }
+      *, *::before, *::after { box-sizing: border-box; }
+    </style>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230A0705'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-size='34' fill='%23C9A05C' text-anchor='middle'%3ELP%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Luxury Peps" />
+    <meta property="og:title" content="Luxury Peps — Research-Grade Peptides" />
+    <meta property="og:description" content="Research-grade peptides for laboratory and research use only. Third-party tested with per-batch certificates of analysis." />
+    <meta property="og:url" content="https://luxurypeps.com/" />
+    <meta name="twitter:card" content="summary" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Luxury Peps","legalName":"Luxury Peps LLC","url":"https://luxurypeps.com","email":"support@luxurypeps.com"}</script>
+    <script>
+      // Shim: the storefront was built against Claude's artifact storage API.
+      // On a real web host that doesn't exist, so map it to localStorage.
+      window.storage = {
+        async get(key) {
+          const v = localStorage.getItem(key);
+          return v === null ? null : { key, value: v, shared: false };
+        },
+        async set(key, value) {
+          localStorage.setItem(key, value);
+          return { key, value, shared: false };
+        },
+        async delete(key) {
+          localStorage.removeItem(key);
+          return { key, deleted: true, shared: false };
+        },
+        async list(prefix = "") {
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(prefix)) keys.push(k);
+          }
+          return { keys, prefix, shared: false };
+        },
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
