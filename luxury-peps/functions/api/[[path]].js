@@ -138,7 +138,17 @@ export async function onRequest(context) {
     }
     if (path === "/api/owner/mark-paid" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
-      await db.run("update orders set status='paid', paid_at=datetime('now') where reference=? and status<>'paid'", body.orderId);
+      await db.run("update orders set status='paid', paid_at=coalesce(paid_at, datetime('now')) where reference=? and status<>'paid'", body.orderId);
+      return J({ ok: true });
+    }
+    if (path === "/api/owner/mark-unpaid" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      await db.run("update orders set status='awaiting_payment', paid_at=null where reference=?", body.orderId);
+      return J({ ok: true });
+    }
+    if (path === "/api/owner/mark-shipped" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      await db.run("update orders set status='shipped' where reference=? and paid_at is not null", body.orderId);
       return J({ ok: true });
     }
     if (path === "/api/owner/payout" && method === "POST") {
@@ -192,6 +202,34 @@ export async function onRequest(context) {
       const threshold = Math.max(1, Math.floor(Number(body.threshold) || 5));
       await db.run("insert into inventory (product_id, count, threshold, updated_at) values (?, ?, ?, datetime('now')) on conflict(product_id) do update set count=excluded.count, threshold=excluded.threshold, updated_at=datetime('now')", pid, count, threshold);
       return J({ ok: true });
+    }
+
+    // ---- OWNER: inbox (contact messages + ambassador applications) ------
+    if (path === "/api/owner/messages" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      return J({ messages: await db.all("select name, email, subject, message, created_at from contact_messages order by created_at desc limit 50") });
+    }
+    if (path === "/api/owner/applications" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      return J({ applications: await db.all("select name, email, platform, handle, followers, niche, why, created_at from ambassador_applications order by created_at desc limit 50") });
+    }
+
+    // ---- OWNER: export all orders as CSV (for bookkeeping/spreadsheets) --
+    if (path === "/api/owner/orders.csv" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const orders = await db.all("select * from orders order by created_at desc");
+      const itemRows = await db.all("select order_ref, name, qty from order_items");
+      const byRef = {};
+      for (const it of itemRows) { (byRef[it.order_ref] = byRef[it.order_ref] || []).push(it.name + " x" + it.qty); }
+      const escCsv = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+      const money2 = (c) => ((c || 0) / 100).toFixed(2);
+      const rows = [["Reference", "Date", "Status", "Method", "Code", "Subtotal", "Discount", "Shipping", "Total", "Commission", "Customer", "Email", "Address", "City", "Zip", "Country", "Items"]];
+      for (const o of orders) {
+        let c = {}; try { c = JSON.parse(o.customer || "{}"); } catch (_) { c = {}; }
+        rows.push([o.reference, String(o.created_at || "").slice(0, 10), o.status, o.method, o.code, money2(o.subtotal_cents), money2(o.discount_cents), money2(o.shipping_cents), money2(o.total_cents), money2(o.commission_cents), c.name, o.email, c.address, c.city, c.zip, c.country, (byRef[o.reference] || []).join("; ")]);
+      }
+      const csv = rows.map((r) => r.map(escCsv).join(",")).join("\n");
+      return new Response(csv, { status: 200, headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=luxury-peps-orders.csv", "Access-Control-Allow-Origin": "*" } });
     }
 
     // ---- PUBLIC: validate an ambassador code (checkout box) -------------
@@ -311,17 +349,22 @@ async function ownerOverview(db, PREORDER) {
   const codes = await db.all("select code, creator, pct, builtin from ambassadors where active=1 order by builtin desc, code");
   const t = (await db.first(`
     select
-      count(case when status='paid' then 1 end) as paid_orders,
-      coalesce(sum(case when status='paid' then total_cents else 0 end),0) as paid_sales,
-      coalesce(sum(case when status='paid' and code is not null then commission_cents else 0 end),0) as commission_total,
-      count(case when status<>'paid' then 1 end) as pending_orders,
-      coalesce(sum(case when status<>'paid' then total_cents else 0 end),0) as pending_sales,
+      count(case when paid_at is not null then 1 end) as paid_orders,
+      coalesce(sum(case when paid_at is not null then total_cents else 0 end),0) as paid_sales,
+      coalesce(sum(case when paid_at is not null and code is not null then commission_cents else 0 end),0) as commission_total,
+      count(case when paid_at is null then 1 end) as pending_orders,
+      coalesce(sum(case when paid_at is null then total_cents else 0 end),0) as pending_sales,
       count(*) as total_orders
     from orders`)) || {};
-  const byCreator = await db.all("select code as creator_code, count(*) as orders, sum(total_cents) as sales_cents, sum(commission_cents) as commission_cents from orders where status='paid' and code is not null group by code");
-  const recent = await db.all("select reference as id, code as creator_code, status, total_cents from orders order by created_at desc limit 12");
-  const dayRows = await db.all("select date(paid_at) as day, sum(total_cents) as cents from orders where status='paid' and paid_at is not null group by date(paid_at)");
-  const bestSellers = await db.all("select oi.name as name, sum(oi.qty) as qty from order_items oi join orders o on o.reference = oi.order_ref where o.status='paid' group by oi.name order by qty desc limit 6");
+  const byCreator = await db.all("select code as creator_code, count(*) as orders, sum(total_cents) as sales_cents, sum(commission_cents) as commission_cents from orders where paid_at is not null and code is not null group by code");
+  const recentRows = await db.all("select o.reference as id, o.code as creator_code, o.status, o.total_cents, o.method, o.customer, o.created_at, coalesce((select json_group_array(json_object('name', oi.name, 'qty', oi.qty, 'line_cents', oi.line_cents)) from order_items oi where oi.order_ref = o.reference), '[]') as items_json from orders o order by o.created_at desc limit 20");
+  const recent = recentRows.map((r) => {
+    let customer = {}; try { customer = JSON.parse(r.customer || "{}"); } catch (_) { customer = {}; }
+    let items = []; try { items = JSON.parse(r.items_json || "[]"); } catch (_) { items = []; }
+    return { id: r.id, creator_code: r.creator_code, status: r.status, total_cents: r.total_cents, method: r.method, created_at: r.created_at, customer, items };
+  });
+  const dayRows = await db.all("select date(paid_at) as day, sum(total_cents) as cents from orders where paid_at is not null group by date(paid_at)");
+  const bestSellers = await db.all("select oi.name as name, sum(oi.qty) as qty from order_items oi join orders o on o.reference = oi.order_ref where o.paid_at is not null group by oi.name order by qty desc limit 6");
   const payoutRows = await db.all("select code, sum(amount_cents) as cents from payouts group by code");
   const paidOutByCode = {};
   let paidOutTotal = 0;
@@ -341,16 +384,16 @@ async function ownerOverview(db, PREORDER) {
 async function creatorStats(db, amb) {
   const t = (await db.first(`
     select
-      count(case when status='paid' then 1 end) as paid_orders,
-      coalesce(sum(case when status='paid' then total_cents else 0 end),0) as paid_sales,
-      coalesce(sum(case when status='paid' then commission_cents else 0 end),0) as paid_comm,
-      count(case when status<>'paid' then 1 end) as pend_orders,
-      coalesce(sum(case when status<>'paid' then total_cents else 0 end),0) as pend_sales,
-      coalesce(sum(case when status<>'paid' then commission_cents else 0 end),0) as pend_comm,
+      count(case when paid_at is not null then 1 end) as paid_orders,
+      coalesce(sum(case when paid_at is not null then total_cents else 0 end),0) as paid_sales,
+      coalesce(sum(case when paid_at is not null then commission_cents else 0 end),0) as paid_comm,
+      count(case when paid_at is null then 1 end) as pend_orders,
+      coalesce(sum(case when paid_at is null then total_cents else 0 end),0) as pend_sales,
+      coalesce(sum(case when paid_at is null then commission_cents else 0 end),0) as pend_comm,
       count(*) as total_orders
     from orders where code=?`, amb.code)) || {};
   const recent = await db.all("select reference as id, status, total_cents, commission_cents from orders where code=? order by created_at desc limit 12", amb.code);
-  const dayRows = await db.all("select date(paid_at) as day, sum(commission_cents) as cents from orders where code=? and status='paid' and paid_at is not null group by date(paid_at)", amb.code);
+  const dayRows = await db.all("select date(paid_at) as day, sum(commission_cents) as cents from orders where code=? and paid_at is not null group by date(paid_at)", amb.code);
   return {
     code: amb.code, creator: amb.creator, discountPct: amb.pct, commissionPct: 0.10,
     paid: { orders: t.paid_orders || 0, salesCents: t.paid_sales || 0, commissionCents: t.paid_comm || 0 },
