@@ -73,6 +73,20 @@ async function pbkdf2(pw, saltBytes) {
   return b64(new Uint8Array(bits));
 }
 
+function hexToBytes(hex) { const clean = String(hex || "").trim(); const b = new Uint8Array(Math.floor(clean.length / 2)); for (let i = 0; i < b.length; i++) b[i] = parseInt(clean.substr(i * 2, 2), 16); return b; }
+function bytesToHex(bytes) { return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(""); }
+
+async function sendCardOrderEmails(env, db, order) {
+  const items = await db.all("select name, qty, line_cents from order_items where order_ref=?", order.reference);
+  let cust = {}; try { cust = JSON.parse(order.customer || "{}"); } catch (_) { cust = {}; }
+  const totalStr = "$" + ((order.total_cents || 0) / 100).toFixed(2);
+  const custName = cust.name || order.email || "Customer";
+  const rowsHtml = items.map((l) => `<tr><td style="padding:4px 10px 4px 0">${esc(l.name)}</td><td style="padding:4px 10px;color:#888">×${l.qty}</td><td style="padding:4px 0;text-align:right">$${((l.line_cents || 0) / 100).toFixed(2)}</td></tr>`).join("");
+  const table = `<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${rowsHtml}<tr><td colspan="2" style="padding-top:8px;font-weight:bold">Total</td><td style="padding-top:8px;text-align:right;font-weight:bold">${totalStr}</td></tr></table>`;
+  await sendEmail(env, { to: env.OWNER_EMAIL || "", subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` });
+  if (order.email) await sendEmail(env, { to: order.email, subject: `Your Luxury Peps order ${order.reference}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">Thank you for your order</h2><p>Your payment was received. Order <b>${order.reference}</b> — total <b>${totalStr}</b>.</p>${table}<p>Your order ships shortly. We'll be in touch with tracking.</p></div>` });
+}
+
 async function sendEmail(env, { to, subject, html }) {
   const key = env.RESEND_API_KEY;
   if (!key || !to) return;
@@ -144,6 +158,15 @@ export async function onRequest(context) {
     if (path === "/api/owner/mark-unpaid" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
       await db.run("update orders set status='awaiting_payment', paid_at=null where reference=?", body.orderId);
+      return J({ ok: true });
+    }
+    if (path === "/api/owner/payout-requests/resolve" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const action = body.action === "paid" ? "paid" : "declined";
+      const row = await db.first("select code, amount_cents from payout_requests where id=?", body.id);
+      if (!row) return J({ error: "not found" }, 404);
+      await db.run("update payout_requests set status=?, resolved_at=datetime('now') where id=?", action, body.id);
+      if (action === "paid") await db.run("insert into payouts (code, amount_cents, note) values (?, ?, ?)", row.code, row.amount_cents, "Payout request #" + body.id);
       return J({ ok: true });
     }
     if (path === "/api/owner/mark-shipped" && method === "POST") {
@@ -223,10 +246,10 @@ export async function onRequest(context) {
       for (const it of itemRows) { (byRef[it.order_ref] = byRef[it.order_ref] || []).push(it.name + " x" + it.qty); }
       const escCsv = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
       const money2 = (c) => ((c || 0) / 100).toFixed(2);
-      const rows = [["Reference", "Date", "Status", "Method", "Code", "Subtotal", "Discount", "Shipping", "Total", "Commission", "Customer", "Email", "Address", "City", "Zip", "Country", "Items"]];
+      const rows = [["Reference", "Date", "Status", "Method", "Code", "Subtotal", "Discount", "Shipping", "Total", "Commission", "Customer", "Email", "Address", "City", "State", "Zip", "Country", "Items"]];
       for (const o of orders) {
         let c = {}; try { c = JSON.parse(o.customer || "{}"); } catch (_) { c = {}; }
-        rows.push([o.reference, String(o.created_at || "").slice(0, 10), o.status, o.method, o.code, money2(o.subtotal_cents), money2(o.discount_cents), money2(o.shipping_cents), money2(o.total_cents), money2(o.commission_cents), c.name, o.email, c.address, c.city, c.zip, c.country, (byRef[o.reference] || []).join("; ")]);
+        rows.push([o.reference, String(o.created_at || "").slice(0, 10), o.status, o.method, o.code, money2(o.subtotal_cents), money2(o.discount_cents), money2(o.shipping_cents), money2(o.total_cents), money2(o.commission_cents), c.name, o.email, c.address, c.city, c.state, c.zip, c.country, (byRef[o.reference] || []).join("; ")]);
       }
       const csv = rows.map((r) => r.map(escCsv).join(",")).join("\n");
       return new Response(csv, { status: 200, headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=luxury-peps-orders.csv", "Access-Control-Allow-Origin": "*" } });
@@ -249,6 +272,96 @@ export async function onRequest(context) {
       if (!amb) return J({ error: "not found" }, 404);
       if (String(qs.get("pin") || "").trim() !== amb.portal_pin) return J({ error: "unauthorized" }, 401);
       return J(await creatorStats(db, amb));
+    }
+
+    // ---- AMBASSADOR: request a payout (goes to the owner portal) --------
+    const reqMatch = path.match(/^\/api\/creator\/([^/]+)\/request-payout$/);
+    if (reqMatch && method === "POST") {
+      const code = upper(decodeURIComponent(reqMatch[1]));
+      const amb = await db.first("select code, creator, portal_pin from ambassadors where code=? and active=1", code);
+      if (!amb) return J({ error: "not found" }, 404);
+      if (String(body.pin || "").trim() !== amb.portal_pin) return J({ error: "unauthorized" }, 401);
+      const amt = Math.max(0, Math.round(Number(body.amountCents) || 0));
+      if (amt <= 0) return J({ error: "Enter a valid amount." }, 400);
+      await db.run("insert into payout_requests (code, creator, amount_cents, method, details, status) values (?, ?, ?, ?, ?, 'pending')", code, amb.creator, amt, body.method || null, body.details || null);
+      await sendEmail(env, { to: OWNER_EMAIL, subject: `Payout request — ${amb.creator} (${code}) — $${(amt / 100).toFixed(2)}`, html: `<div style="font-family:Arial,sans-serif;max-width:520px"><p><b>${esc(amb.creator)}</b> (${esc(code)}) requested a payout.</p><p><b>Amount:</b> $${(amt / 100).toFixed(2)}<br><b>Pay via:</b> ${esc(body.method)}<br><b>Details:</b> ${esc(body.details)}</p><p>Review and mark it paid in your owner portal.</p></div>` });
+      return J({ ok: true });
+    }
+
+    // ---- CARD: Authorize.Net Accept Hosted — request a form token -------
+    if (path === "/api/anet/hosted-token" && method === "POST") {
+      if (!env.ANET_API_LOGIN_ID || !env.ANET_TRANSACTION_KEY) return J({ error: "Card payment isn't configured yet." }, 501);
+      const code = body.code ? upper(body.code) : null;
+      let pct = 0;
+      if (code) { const a = await db.first("select pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; }
+      const p = priceOrder(body.items, pct);
+      if (!p.lines.length) return J({ error: "No valid items." }, 400);
+      const reference = newReference();
+      await db.run("insert into orders (reference, email, method, code, status, subtotal_cents, discount_cents, shipping_cents, total_cents, commission_cents, customer, certified) values (?, ?, 'card', ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?)", reference, body.email || null, code, p.subtotal, p.discount, p.shipping, p.total, p.commission, JSON.stringify(body.customer || {}), body.certifiedResearchUse ? 1 : 0);
+      for (const l of p.lines) {
+        await db.run("insert into order_items (order_ref, variant_id, product_id, name, qty, unit_price_cents, line_cents) values (?, ?, ?, ?, ?, ?, ?)", reference, l.variantId, l.productId, l.name, l.qty, l.unitCents, l.lineCents);
+      }
+      const isProd = (env.ANET_ENV || "sandbox").toLowerCase() === "production";
+      const apiUrl = isProd ? "https://api.authorize.net/xml/v1/request.api" : "https://apitest.authorize.net/xml/v1/request.api";
+      const origin = new URL(request.url).origin;
+      const tokenReq = {
+        getHostedPaymentPageRequest: {
+          merchantAuthentication: { name: env.ANET_API_LOGIN_ID, transactionKey: env.ANET_TRANSACTION_KEY },
+          transactionRequest: {
+            transactionType: "authCaptureTransaction",
+            amount: (p.total / 100).toFixed(2),
+            order: { invoiceNumber: reference, description: "Luxury Peps order" },
+            customer: { email: body.email || "" },
+          },
+          hostedPaymentSettings: {
+            setting: [
+              { settingName: "hostedPaymentReturnOptions", settingValue: JSON.stringify({ showReceipt: false }) },
+              { settingName: "hostedPaymentIFrameCommunicatorUrl", settingValue: JSON.stringify({ url: origin + "/AuthorizeNetIFrameCommunicator.html" }) },
+              { settingName: "hostedPaymentButtonOptions", settingValue: JSON.stringify({ text: "Pay Now" }) },
+              { settingName: "hostedPaymentOrderOptions", settingValue: JSON.stringify({ show: false }) },
+              { settingName: "hostedPaymentPaymentOptions", settingValue: JSON.stringify({ cardCodeRequired: true, showCreditCard: true, showBankAccount: false }) },
+              { settingName: "hostedPaymentStyleOptions", settingValue: JSON.stringify({ bgColor: "#0b0b0d" }) },
+            ],
+          },
+        },
+      };
+      let token = null, errMsg = "Payment setup failed.";
+      try {
+        const r = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tokenReq) });
+        const text = await r.text();
+        const data = JSON.parse(text.replace(/^\uFEFF/, "").trim());
+        token = data && data.token;
+        if (!token && data && data.messages && data.messages.message && data.messages.message[0]) errMsg = data.messages.message[0].text || errMsg;
+      } catch (_) { /* fall through */ }
+      if (!token) return J({ error: errMsg }, 502);
+      return J({ token, reference, env: isProd ? "production" : "sandbox" });
+    }
+
+    // ---- CARD: Authorize.Net webhook — confirms payment server-side -----
+    if (path === "/api/anet/webhook" && method === "POST") {
+      const raw = await request.text();
+      const sigHeader = request.headers.get("x-anet-signature") || "";
+      if (env.ANET_SIGNATURE_KEY) {
+        try {
+          const key = await crypto.subtle.importKey("raw", hexToBytes(env.ANET_SIGNATURE_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+          const mac = await crypto.subtle.sign("HMAC", key, TE.encode(raw));
+          const computed = bytesToHex(new Uint8Array(mac)).toUpperCase();
+          const provided = (sigHeader.split("=")[1] || "").toUpperCase();
+          if (!provided || computed !== provided) return J({ error: "bad signature" }, 401);
+        } catch (_) { return J({ error: "signature check failed" }, 401); }
+      }
+      let evt = null;
+      try { evt = JSON.parse(raw); } catch (_) { return J({ ok: true }); }
+      const type = (evt && evt.eventType) || "";
+      const inv = evt && evt.payload && evt.payload.invoiceNumber;
+      if (/authcapture|priorauthcapture|capture/i.test(type) && inv) {
+        const order = await db.first("select * from orders where reference=?", inv);
+        if (order && order.status !== "paid") {
+          await db.run("update orders set status='paid', paid_at=datetime('now') where reference=?", inv);
+          await sendCardOrderEmails(env, db, order);
+        }
+      }
+      return J({ ok: true });
     }
 
     // ---- CHECKOUT: manual payment order ---------------------------------
@@ -369,8 +482,9 @@ async function ownerOverview(db, PREORDER) {
   const paidOutByCode = {};
   let paidOutTotal = 0;
   for (const r of payoutRows) { paidOutByCode[r.code] = r.cents; paidOutTotal += r.cents || 0; }
+  const payoutRequests = await db.all("select id, code, creator, amount_cents, method, details, created_at from payout_requests where status='pending' order by created_at desc");
   return {
-    preorder: PREORDER, commissionPct: 0.10,
+    preorder: PREORDER, commissionPct: 0.10, payoutRequests,
     codes: codes.map((c) => ({ code: c.code, creator: c.creator, pct: c.pct, builtin: !!c.builtin })),
     paidOrders: t.paid_orders || 0, paidSalesCents: t.paid_sales || 0,
     commissionOwedCents: Math.max(0, (t.commission_total || 0) - paidOutTotal),
@@ -399,5 +513,6 @@ async function creatorStats(db, amb) {
     paid: { orders: t.paid_orders || 0, salesCents: t.paid_sales || 0, commissionCents: t.paid_comm || 0 },
     pending: { orders: t.pend_orders || 0, salesCents: t.pend_sales || 0, commissionCents: t.pend_comm || 0 },
     totalOrders: t.total_orders || 0, recent, series: series14(dayRows, "commission_cents"),
+    requests: await db.all("select id, amount_cents, method, status, created_at from payout_requests where code=? order by created_at desc limit 10", amb.code),
   };
 }
