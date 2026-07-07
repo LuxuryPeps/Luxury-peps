@@ -29,14 +29,15 @@ const SITE_CONFIG = {
   // underwriting. Flip enabled to false the moment card checkout goes live.
   manualPayments: {
     enabled: true,
-    bank: true,           // bank transfer — account & routing numbers are emailed per order (never publish them)
+    bank: false,          // removed — card only
     bankRecipient: "Luxury Peps LLC",  // account-holder name buyers send to (safe to display)
     bankName: "Chase",                 // bank name shown on the payment screen (safe to display)
-    cashapp: true,        // Cash App — payments sent to the cashtag below with the order reference as the note
+    card: true,           // card checkout via Authorize.Net Accept Hosted (iframe)
+    cashapp: false,       // removed
     cashtag: "$LuxuryPeps",
-    zelle: true,          // Zelle — payments sent to the ID below with the order reference in the memo
+    zelle: false,         // removed
     zelleId: "luxurypeps",
-    crypto: true,         // set false to hide the crypto option
+    crypto: false,        // removed — card only
     cryptoAddresses: { "USDC (ERC-20)": "0x29fcf8290F2369bBCf25DdD8e0a3cf2f2E34c06d" },
   },
   apiBaseUrl: "",       // leave blank; backend is same-origin
@@ -463,7 +464,7 @@ const APPAREL = APPAREL_BASE.map((a) => ({
 }));
 
 // Unified catalog lookup so the cart/checkout resolve both peptides and apparel.
-const CATALOG = [...PRODUCTS, ...APPAREL];
+const CATALOG = [...PRODUCTS];
 function findItem(id) { return CATALOG.find((x) => x.id === id); }
 // Everything (peptides + apparel) is on pre-order while inventory is inbound.
 // Flip SITE_CONFIG.preorder to false the moment stock arrives.
@@ -1037,7 +1038,6 @@ function Header({ page, setPage, cartCount, userEmail, onLogout }) {
   }, [menuOpen]);
   const navItems = [
     ["shop", "Catalog"],
-    ["apparel", "Apparel"],
     ["about", "Standards"],
     ["calculator", "Calculator"],
     ["faq", "FAQ"],
@@ -1121,7 +1121,6 @@ function Footer({ setPage }) {
             <div className="lp-eyebrow" style={{ marginBottom: 14 }}>Shop</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button className="lp-nav-link" onClick={() => setPage("shop")} style={{ textAlign: "left" }}>Full Catalog</button>
-              <button className="lp-nav-link" onClick={() => setPage("apparel")} style={{ textAlign: "left" }}>Apparel</button>
               <button className="lp-nav-link" onClick={() => setPage("about")} style={{ textAlign: "left" }}>Lab Standards</button>
               <button className="lp-nav-link" onClick={() => setPage("calculator")} style={{ textAlign: "left" }}>Concentration Calculator</button>
             </div>
@@ -2325,7 +2324,7 @@ function Checkout({ cart, setPage, addToCart }) {
   );
   const subtotal = items.reduce((sum, i) => sum + Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))), 0);
   const shipping = subtotal === 0 ? 0 : (subtotal >= FREE_SHIP_THRESHOLD ? 0 : FLAT_SHIP);
-  const [form, setForm] = useState({ name: "", email: "", address: "", city: "", zip: "", country: "" });
+  const [form, setForm] = useState({ name: "", email: "", address: "", city: "", state: "", zip: "", country: "" });
   const [certified, setCertified] = useState(false);
   const [status, setStatus] = useState("idle"); // idle | loading | error
   const [errorMsg, setErrorMsg] = useState("");
@@ -2333,8 +2332,10 @@ function Checkout({ cart, setPage, addToCart }) {
   const [appliedCode, setAppliedCode] = useState(null);
   const [codeError, setCodeError] = useState("");
   const manualCfg = SITE_CONFIG.manualPayments || {};
+  const cardOn = !!manualCfg.card && BACKEND_LIVE; // Authorize.Net card checkout needs the live backend
   const manualOn = !!manualCfg.enabled && (manualCfg.bank || manualCfg.cashapp || manualCfg.zelle || manualCfg.crypto);
-  const [payMethod, setPayMethod] = useState(manualOn ? (manualCfg.bank ? "bank" : manualCfg.cashapp ? "cashapp" : manualCfg.zelle ? "zelle" : "crypto") : "card");
+  const [payMethod, setPayMethod] = useState(cardOn ? "card" : (manualCfg.bank ? "bank" : manualCfg.crypto ? "crypto" : "card"));
+  const [anet, setAnet] = useState(null); // { token, reference, env } while the card modal is open
   const [step, setStep] = useState("shipping"); // shipping | payment
   const [touched, setTouched] = useState({});
   const [remember, setRemember] = useState(true);
@@ -2402,6 +2403,45 @@ function Checkout({ cart, setPage, addToCart }) {
 
   const shippingValid = fieldValid.name && fieldValid.email && fieldValid.address && fieldValid.city && fieldValid.zip && fieldValid.country;
   const canSubmit = items.length > 0 && certified && form.name && form.email && form.address;
+
+  const payWithCard = async () => {
+    if (!canSubmit) return;
+    setStatus("loading"); setErrorMsg(""); saveInfo();
+    try {
+      const res = await fetch(API_BASE + "/api/anet/hosted-token", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: items.map((i) => ({ variantId: i.variantId, qty: i.qty })), email: form.email, code: appliedCode ? appliedCode.code : null, customer: form, certifiedResearchUse: certified }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.token) throw new Error(d.error || "Couldn't start card payment. Please try again.");
+      setStatus("idle");
+      setAnet({ token: d.token, reference: d.reference, env: d.env });
+    } catch (err) {
+      setStatus("error"); setErrorMsg(err.message || "Couldn't start card payment.");
+    }
+  };
+
+  const handleCardApproved = async (resp) => {
+    const ref = anet ? anet.reference : null;
+    setAnet(null);
+    if (!resp || String(resp.responseCode) !== "1") {
+      setStatus("error");
+      setErrorMsg((resp && (resp.errorMessage || (resp.messages && resp.messages.message && resp.messages.message[0] && resp.messages.message[0].description))) || "Your card was not approved. Please try another card.");
+      return;
+    }
+    const summary = {
+      items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))) })),
+      subtotal, creatorDiscount, shipping, total,
+      code: appliedCode ? appliedCode.code : null,
+      method: "card", customer: form,
+      preorder: items.some((i) => isPreorder(i.product)),
+      placedAt: new Date().toISOString(),
+    };
+    const placedOrder = { reference: ref || ("LP-" + Date.now().toString(36).toUpperCase()), status: "Paid", ...summary };
+    try { await window.storage.set("lastOrder", JSON.stringify(placedOrder), false); } catch (_) {}
+    await saveOrderToHistory(placedOrder);
+    setPage("success");
+  };
 
   const placeManualOrder = async () => {
     setStatus("loading");
@@ -2484,13 +2524,12 @@ function Checkout({ cart, setPage, addToCart }) {
 
   return (
     <div className="lp-fade" style={{ maxWidth: 1300, margin: "0 auto", padding: "60px 28px 100px" }}>
+      {anet && <AnetHostedModal token={anet.token} env={anet.env} onApproved={handleCardApproved} onCancel={() => setAnet(null)} />}
       <h2 className="lp-serif" style={{ fontSize: 34, marginBottom: 8 }}>Checkout</h2>
       <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 36 }}>
-        {manualOn
-          ? "Card checkout is coming soon. For now, orders are placed with a " +
-            [manualCfg.bank && "bank transfer", manualCfg.cashapp && "Cash App", manualCfg.zelle && "Zelle", manualCfg.crypto && "crypto"].filter(Boolean).join(" or ") +
-            " payment and confirmed by email."
-          : "This preview calls a backend checkout endpoint that isn't deployed yet — see the note below once you submit."}
+        {cardOn
+          ? "Pay securely by credit or debit card. Your payment is processed by Authorize.Net — card details never touch our site."
+          : "Card checkout runs on the live site. This preview can't process real payments."}
       </p>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 30, fontSize: 12.5 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 8, color: step === "shipping" ? "var(--gold-bright)" : "var(--muted)" }}>
@@ -2517,6 +2556,7 @@ function Checkout({ cart, setPage, addToCart }) {
               <Field label="City" placeholder="City" autoComplete="address-level2" value={form.city} onChange={update("city")} onBlur={touch("city")} valid={fieldValid.city} touched={touched.city} />
               <Field label="ZIP / Postal" placeholder="ZIP" autoComplete="postal-code" value={form.zip} onChange={update("zip")} onBlur={touch("zip")} valid={fieldValid.zip} touched={touched.zip} />
             </div>
+            <Field label="State / Province (optional)" placeholder="State / Province" autoComplete="address-level1" value={form.state} onChange={update("state")} valid={true} touched={false} />
             <Field label="Country" placeholder="Country" autoComplete="country-name" value={form.country} onChange={update("country")} onBlur={touch("country")} valid={fieldValid.country} touched={touched.country} />
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "var(--muted)", cursor: "pointer", marginTop: 2 }}>
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} style={{ width: "auto", accentColor: "#C9A05C" }} />
@@ -2536,14 +2576,24 @@ function Checkout({ cart, setPage, addToCart }) {
               <button onClick={() => setStep("shipping")} style={{ background: "none", border: "none", color: "var(--gold-bright)", fontSize: 11.5, cursor: "pointer", padding: 0, textDecoration: "underline" }}>Edit</button>
             </div>
             <div style={{ fontSize: 13.5, color: "var(--cream)", lineHeight: 1.55 }}>{form.name}</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>{form.address}, {form.city} {form.zip}</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>{form.address}, {form.city}{form.state ? ", " + form.state : ""} {form.zip}</div>
             <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>{form.country}</div>
             <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>{form.email}</div>
           </div>
           <div style={{ border: "1px solid var(--line)", padding: "22px 24px", marginBottom: 18 }}>
           <div className="lp-eyebrow" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}><Lock size={13} color="var(--gold)" /> Payment</div>
-          {manualOn ? (
+          {(manualOn || cardOn) ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {cardOn && (
+                <label style={{ display: "flex", gap: 12, alignItems: "flex-start", border: payMethod === "card" ? "1px solid var(--gold)" : "1px solid var(--line)", padding: "14px 16px", cursor: "pointer" }}>
+                  <input type="radio" name="paymethod" checked={payMethod === "card"} onChange={() => setPayMethod("card")} style={{ width: "auto", marginTop: 3, accentColor: "#C9A05C" }} />
+                  <span style={{ fontSize: 13, lineHeight: 1.6 }}>
+                    <strong style={{ color: "var(--cream)" }}>Credit / Debit Card</strong>
+                    <br />
+                    <span style={{ color: "var(--muted)" }}>Pay securely by card. Processed by Authorize.Net — your card details never touch our site.</span>
+                  </span>
+                </label>
+              )}
               {manualCfg.bank && (
                 <label style={{ display: "flex", gap: 12, alignItems: "flex-start", border: payMethod === "bank" ? "1px solid var(--gold)" : "1px solid var(--line)", padding: "14px 16px", cursor: "pointer" }}>
                   <input type="radio" name="paymethod" checked={payMethod === "bank"} onChange={() => setPayMethod("bank")} style={{ width: "auto", marginTop: 3, accentColor: "#C9A05C" }} />
@@ -2584,14 +2634,11 @@ function Checkout({ cart, setPage, addToCart }) {
                   </span>
                 </label>
               )}
-              <div style={{ border: "1px dashed var(--line)", padding: "12px 16px", fontSize: 12.5, color: "var(--muted)", opacity: 0.8 }}>
-                Card checkout — available soon.
-              </div>
             </div>
           ) : (
             <div style={{ border: "1px dashed var(--line)", padding: 20, fontSize: 13, color: "var(--muted)" }}>
-              On submit, this redirects to a Stripe-hosted Checkout session created by your backend. Use a
-              research-chemical-friendly high-risk processor if a standard Stripe account restricts this category.
+              Card checkout (Authorize.Net) is active on the live site. It can't run in this local preview,
+              since it needs the backend to create a secure payment session.
             </div>
           )}
           </div>
@@ -2681,7 +2728,7 @@ function Checkout({ cart, setPage, addToCart }) {
             disabled={step === "shipping" ? !shippingValid : (!canSubmit || status === "loading")}
             onClick={step === "shipping"
               ? () => { if (shippingValid) { saveInfo(); setStep("payment"); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {} } else { setTouched({ name: true, email: true, address: true, city: true, zip: true, country: true }); } }
-              : (manualOn && payMethod !== "card" ? placeManualOrder : handlePlaceOrder)}
+              : (payMethod === "card" ? payWithCard : placeManualOrder)}
           >
             {step === "shipping"
               ? <>Continue to Payment <ChevronRight size={15} /></>
@@ -2804,6 +2851,47 @@ function Orders({ setPage }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Authorize.Net Accept Hosted — loads the hosted card form inside an iframe.
+// The token form is POSTed to Authorize.Net; the same-origin communicator page
+// relays resize/cancel/transactResponse messages back here.
+function AnetHostedModal({ token, env, onApproved, onCancel }) {
+  const formRef = useRef(null);
+  const [size, setSize] = useState({ w: 500, h: 660 });
+  const payUrl = env === "production" ? "https://accept.authorize.net/payment/payment" : "https://test.authorize.net/payment/payment";
+  useEffect(() => {
+    window.AuthorizeNetIFrame = window.AuthorizeNetIFrame || {};
+    window.AuthorizeNetIFrame.onReceiveCommunication = (qstr) => {
+      const params = {};
+      String(qstr || "").split("&").forEach((kv) => { const idx = kv.indexOf("="); if (idx > 0) params[kv.slice(0, idx)] = decodeURIComponent(kv.slice(idx + 1) || ""); });
+      if (params.action === "resizeWindow") {
+        const w = parseInt(params.width, 10), h = parseInt(params.height, 10);
+        if (w && h) setSize({ w: Math.min(w, 580), h: h + 24 });
+      } else if (params.action === "cancel") {
+        onCancel();
+      } else if (params.action === "transactResponse") {
+        let resp = {}; try { resp = JSON.parse(params.response || "{}"); } catch (_) { resp = {}; }
+        onApproved(resp);
+      }
+    };
+    const t = setTimeout(() => { try { if (formRef.current) formRef.current.submit(); } catch (_) {} }, 60);
+    return () => { clearTimeout(t); };
+  }, []);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, maxWidth: "100%", maxHeight: "100%", overflow: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
+          <button onClick={onCancel} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <form ref={formRef} action={payUrl} method="post" target="anetIframe" style={{ margin: 0 }}>
+          <input type="hidden" name="token" value={token} />
+        </form>
+        <iframe name="anetIframe" title="Card payment" width={size.w} height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: size.w, height: size.h, background: "#fff", borderRadius: 2 }} />
+      </div>
     </div>
   );
 }
@@ -3783,7 +3871,7 @@ function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, canMarkPa
   const fmt = (c) => "$" + ((Number(c) || 0) / 100).toFixed(2);
   const methodLabel = { bank: "Bank transfer", cashapp: "Cash App", zelle: "Zelle", crypto: "Crypto (USDC)" }[o.method] || o.method || "—";
   const date = o.created_at ? new Date(o.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-  const cityZip = [cust.city, cust.zip].filter(Boolean).join(" ");
+  const cityZip = [[cust.city, cust.state].filter(Boolean).join(", "), cust.zip].filter(Boolean).join(" ");
   const addressText = [cust.name, cust.address, cityZip, cust.country].filter(Boolean).join("\n");
   return (
     <div style={{ borderTop: first ? "none" : "1px solid var(--line)", padding: "10px 0" }}>
@@ -3928,6 +4016,22 @@ function OwnerPortal({ setPage }) {
   const [localOrders, setLocalOrders] = useState([]); // orders saved on this device (browser mode)
   const [inboxMsgs, setInboxMsgs] = useState([]);
   const [inboxApps, setInboxApps] = useState([]);
+  const [localReqs, setLocalReqs] = useState([]);
+  const loadLocalReqs = async () => { try { const r = await window.storage.get("payoutRequests", false); const list = r && r.value ? JSON.parse(r.value) : []; setLocalReqs(list.filter((x) => x.status === "pending")); } catch (_) { /* none */ } };
+  useEffect(() => { if (!live) loadLocalReqs(); }, [authed]);
+  const resolveRequest = async (id, action) => {
+    if (live) {
+      try { const res = await fetch(API_BASE + "/api/owner/payout-requests/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, id, action }) }); if (res.ok) refresh(); } catch (_) { /* ignore */ }
+      return;
+    }
+    try {
+      const r = await window.storage.get("payoutRequests", false);
+      const list = r && r.value ? JSON.parse(r.value) : [];
+      const updated = list.map((x) => (x.id === id ? { ...x, status: action } : x));
+      await window.storage.set("payoutRequests", JSON.stringify(updated), false);
+      setLocalReqs(updated.filter((x) => x.status === "pending"));
+    } catch (_) { /* ignore */ }
+  };
   const [orderQuery, setOrderQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | awaiting | paid | shipped
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
@@ -4141,11 +4245,11 @@ function OwnerPortal({ setPage }) {
     if (live) { window.open(API_BASE + "/api/owner/orders.csv?pin=" + encodeURIComponent(pin), "_blank"); return; }
     // Browser mode: build the CSV from orders saved on this device.
     const escCsv = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
-    const rows = [["Reference", "Date", "Status", "Method", "Code", "Total", "Customer", "Email", "Address", "City", "Zip", "Country", "Items"]];
+    const rows = [["Reference", "Date", "Status", "Method", "Code", "Total", "Customer", "Email", "Address", "City", "State", "Zip", "Country", "Items"]];
     for (const o of localOrders) {
       const c = o.customer || {};
       const items = (o.items || []).map((it) => it.name + " x" + it.qty).join("; ");
-      rows.push([o.reference, String(o.placedAt || "").slice(0, 10), o.status || "", o.method || "", o.code || "", "$" + o.total, c.name || "", c.email || "", c.address || "", c.city || "", c.zip || "", c.country || "", items]);
+      rows.push([o.reference, String(o.placedAt || "").slice(0, 10), o.status || "", o.method || "", o.code || "", "$" + o.total, c.name || "", c.email || "", c.address || "", c.city || "", c.state || "", c.zip || "", c.country || "", items]);
     }
     const csv = rows.map((r) => r.map(escCsv).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -4473,6 +4577,37 @@ function OwnerPortal({ setPage }) {
         })()}
       </div>
 
+      {/* Payout requests from ambassadors */}
+      {(() => {
+        const reqs = live ? ((view && view.payoutRequests) || []) : localReqs;
+        if (reqs.length === 0) return null;
+        return (
+          <>
+            <div className="lp-eyebrow" style={{ marginBottom: 14 }}>Payout Requests <span style={{ color: "var(--gold-bright)" }}>({reqs.length})</span></div>
+            <div style={{ border: "1px solid var(--gold)", padding: "8px 20px", marginBottom: 18, background: "linear-gradient(135deg, rgba(176,130,67,0.06), transparent 70%)" }}>
+              {reqs.map((r, i) => {
+                const amt = r.amount_cents != null ? r.amount_cents : r.amountCents;
+                return (
+                  <div key={r.id || i} style={{ padding: "13px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+                    <div style={{ minWidth: 180 }}>
+                      <div style={{ color: "var(--cream)", fontSize: 13.5 }}>{r.creator || r.code} <span style={{ color: "var(--gold-bright)", fontSize: 11.5, marginLeft: 6 }}>{r.code}</span></div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>Pay via <span style={{ color: "var(--cream)" }}>{r.method}</span> → <span style={{ color: "var(--cream)" }}>{r.details}</span></div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ color: "var(--gold-bright)", fontSize: 17, fontWeight: 600 }}>{money(amt)}</div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 7, justifyContent: "flex-end" }}>
+                        <button className="lp-btn lp-btn-solid" onClick={() => resolveRequest(r.id, "paid")} style={{ fontSize: 11, padding: "6px 14px" }}>Mark Paid</button>
+                        <button className="lp-btn" onClick={() => resolveRequest(r.id, "declined")} style={{ fontSize: 11, padding: "6px 12px" }}>Decline</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
+
       {/* Inbox — contact messages + ambassador applications */}
       <div className="lp-eyebrow" style={{ marginBottom: 14 }}>Inbox</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, marginBottom: 18 }}>
@@ -4531,6 +4666,43 @@ function AmbassadorPortal({ setPage }) {
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
+  // Payout requests
+  const [reqMethod, setReqMethod] = useState("Cash App");
+  const [reqDetails, setReqDetails] = useState("");
+  const [reqAmount, setReqAmount] = useState("");
+  const [reqStatus, setReqStatus] = useState(""); // "" | sending | sent | error
+  const [myRequests, setMyRequests] = useState([]);
+  useEffect(() => { if (data && Array.isArray(data.requests)) setMyRequests(data.requests); }, [data]);
+
+  const loadLocalRequests = async (c) => {
+    try { const r = await window.storage.get("payoutRequests", false); const list = r && r.value ? JSON.parse(r.value) : []; setMyRequests(list.filter((x) => String(x.code || "").toUpperCase() === c).map((x) => ({ id: x.id, amount_cents: x.amountCents, method: x.method, status: x.status, created_at: x.createdAt }))); } catch (_) { /* none */ }
+  };
+  const submitPayoutRequest = async () => {
+    const amountCents = reqAmount ? Math.round(parseFloat(reqAmount) * 100) : (data ? data.paid.commissionCents : 0);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) { setReqStatus("error"); setError("Enter a valid amount."); return; }
+    if (!reqDetails.trim()) { setReqStatus("error"); setError("Add where to send it (your Cash App tag, email, etc.)."); return; }
+    setError(""); setReqStatus("sending");
+    const c = String(code).trim().toUpperCase();
+    if (live) {
+      try {
+        const res = await fetch(API_BASE + "/api/creator/" + encodeURIComponent(c) + "/request-payout", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin, amountCents, method: reqMethod, details: reqDetails }),
+        });
+        if (res.ok) { setReqStatus("sent"); setReqDetails(""); setReqAmount(""); }
+        else { setReqStatus("error"); setError("Couldn't send the request. Try again shortly."); }
+      } catch (_) { setReqStatus("error"); setError("Couldn't reach the server."); }
+    } else {
+      try {
+        const r = await window.storage.get("payoutRequests", false);
+        const list = r && r.value ? JSON.parse(r.value) : [];
+        list.push({ id: "PR-" + Date.now().toString(36).toUpperCase(), code: c, creator: data ? data.creator : c, amountCents, method: reqMethod, details: reqDetails, status: "pending", createdAt: new Date().toISOString() });
+        await window.storage.set("payoutRequests", JSON.stringify(list), false);
+        setReqStatus("sent"); setReqDetails(""); setReqAmount(""); loadLocalRequests(c);
+      } catch (_) { setReqStatus("error"); }
+    }
+  };
+
   const persistCreator = async (c, pn) => { try { await window.storage.set("creator:auth", JSON.stringify({ code: c, pin: pn, ts: Date.now() }), false); } catch (_) { /* ignore */ } };
 
   const lookup = async (codeArg, pinArg) => {
@@ -4558,6 +4730,7 @@ function AmbassadorPortal({ setPage }) {
         let orders = [];
         try { const r = await window.storage.get("orderHistory", false); if (r && r.value) { const arr = JSON.parse(r.value); if (Array.isArray(arr)) orders = arr; } } catch (_) { /* none */ }
         setData(buildCreatorFromOrders(orders, c, info));
+        loadLocalRequests(c);
         setCode(c); setPin(pn); persistCreator(c, pn);
       }
     } catch (_) {
@@ -4689,6 +4862,54 @@ function AmbassadorPortal({ setPage }) {
         {chartData.some((v) => v > 0)
           ? <SparkBars data={chartData} labels={chartLabels} />
           : <p style={{ color: "var(--muted)", fontSize: 13, margin: 0, lineHeight: 1.7 }}>No earnings in this window yet. Your daily commission will chart here as orders come in.</p>}
+      </div>
+
+      {/* Request payout */}
+      <div style={{ border: "1px solid var(--gold)", padding: "20px 22px", marginBottom: 14, background: "linear-gradient(135deg, rgba(176,130,67,0.08), transparent 70%)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}><DollarSign size={14} color="var(--gold-bright)" /><div className="lp-eyebrow">Request a Payout</div></div>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
+          You've earned <b style={{ color: "var(--gold-bright)" }}>{money(paidCommission)}</b> in commission. Request a payout and it goes straight to the owner.
+        </p>
+        {reqStatus === "sent" ? (
+          <div style={{ border: "1px solid var(--gold)", padding: "12px 14px", fontSize: 13, color: "var(--gold-bright)", display: "flex", alignItems: "center", gap: 8 }}>
+            <Check size={15} /> Request sent! The owner will review and send your payout.
+            <button className="lp-btn" onClick={() => setReqStatus("")} style={{ fontSize: 11, marginLeft: "auto", padding: "5px 10px" }}>Request another</button>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 5 }}>Amount ($)</label>
+                <input type="number" inputMode="decimal" value={reqAmount} onChange={(e) => setReqAmount(e.target.value)} placeholder={(paidCommission / 100).toFixed(2)} style={{ width: "100%", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", fontSize: 13, padding: "10px 12px", outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 5 }}>Pay me via</label>
+                <select value={reqMethod} onChange={(e) => setReqMethod(e.target.value)} style={{ width: "100%", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", fontSize: 13, padding: "10px 12px", outline: "none" }}>
+                  <option>Cash App</option><option>Zelle</option><option>PayPal</option><option>Venmo</option><option>Bank transfer</option><option>Crypto (USDC)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 5 }}>Where to send it (tag, email, or account)</label>
+              <input type="text" value={reqDetails} onChange={(e) => setReqDetails(e.target.value)} placeholder="e.g. $yourcashtag or you@email.com" style={{ width: "100%", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", fontSize: 13, padding: "10px 12px", outline: "none" }} />
+            </div>
+            {error && reqStatus === "error" && <div style={{ fontSize: 12, color: "#e0a0a0" }}>{error}</div>}
+            <button className="lp-btn lp-btn-solid" onClick={submitPayoutRequest} disabled={reqStatus === "sending"} style={{ justifySelf: "start", padding: "10px 22px" }}>
+              {reqStatus === "sending" ? "Sending…" : "Request Payout"}
+            </button>
+          </div>
+        )}
+        {myRequests.length > 0 && (
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+            <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Your Requests</div>
+            {myRequests.slice(0, 6).map((r, i) => (
+              <div key={r.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)", fontSize: 12.5 }}>
+                <span style={{ color: "var(--cream)" }}>{money(r.amount_cents)} <span style={{ color: "var(--muted)" }}>· {r.method}</span></span>
+                <span style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.05em", color: r.status === "paid" ? "#8fca8f" : r.status === "declined" ? "#e0a0a0" : "var(--gold-bright)" }}>{r.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent orders */}
@@ -5233,7 +5454,6 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       <Header page={page} setPage={setPage} cartCount={cartCount} userEmail={userEmail} onLogout={onLogout} />
       {page === "home" && <Home setPage={setPage} addToCart={addToCart} />}
       {page === "shop" && <Shop setPage={setPage} openProduct={openProduct} addToCart={addToCart} recentlyViewed={recentlyViewed} />}
-      {page === "apparel" && <ApparelPage setPage={setPage} addToCart={addToCart} />}
       {page === "product" && <ProductDetail productId={selectedProduct} setPage={setPage} addToCart={addToCart} openProduct={openProduct} recentlyViewed={recentlyViewed} />}
       {page === "coa" && <CertificateOfAnalysis productId={selectedProduct} setPage={setPage} />}
       {page === "cart" && <Cart cart={cart} setPage={setPage} updateQty={updateQty} removeItem={removeItem} addToCart={addToCart} />}
@@ -5252,7 +5472,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "owner" && <OwnerPortal setPage={setPage} />}
       {page === "batch" && <BatchLookup setPage={setPage} openProduct={openProduct} />}
       {page === "compare" && <ComparePage setPage={setPage} openProduct={openProduct} />}
-      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare","apparel" ].includes(page) && (
+      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare" ].includes(page) && (
         <div className="lp-fade" style={{ maxWidth: 600, margin: "0 auto", padding: "100px 28px", textAlign: "center" }}>
           <div className="lp-eyebrow" style={{ marginBottom: 12 }}>404</div>
           <h2 className="lp-serif" style={{ fontSize: 30, marginBottom: 14 }}>Page not found</h2>
