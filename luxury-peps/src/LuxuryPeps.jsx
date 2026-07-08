@@ -2884,7 +2884,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
   // Mobile: natural form height, top-aligned, overlay scrolls. Desktop: cap to the
   // screen so the whole form fits (scrolls inside the frame if it's taller).
   const padTop = isMobile ? Math.max(56, Math.round(win.h * 0.16)) : 40;
-  const iframeH = isMobile ? formH : Math.max(360, Math.min(formH, Math.round(win.h * 0.9) - 46));
+  const iframeH = Math.max(300, Math.min(formH, 440));
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: padTop, paddingLeft: 12, paddingRight: 12, paddingBottom: 24, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: boxW, maxWidth: "100%", margin: "0 auto" }}>
