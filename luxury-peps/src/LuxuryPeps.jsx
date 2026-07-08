@@ -2801,7 +2801,7 @@ function Orders({ setPage }) {
     })();
   }, []);
 
-  const methodLabel = (m) => m === "crypto" ? "USDC (crypto)" : m === "cashapp" ? "Cash App" : m === "zelle" ? "Zelle" : "Bank transfer";
+  const methodLabel = (m) => m === "crypto" ? "USDC (crypto)" : m === "cashapp" ? "Cash App" : m === "zelle" ? "Zelle" : m === "card" ? "Card" : "Bank transfer";
   const openOrder = async (o) => {
     try { await window.storage.set("lastOrder", JSON.stringify(o), false); } catch { /* ignore */ }
     setPage("success");
@@ -2947,6 +2947,32 @@ function Success({ setPage, clearCart }) {
         <button className="lp-btn lp-btn-solid" onClick={() => { clearCart(); setPage("home"); }}>
           Return Home
         </button>
+      </div>
+    );
+  }
+
+  if (order.method === "card") {
+    return (
+      <div className="lp-fade" style={{ maxWidth: 640, margin: "0 auto", padding: "90px 28px 120px", textAlign: "center" }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", border: "1px solid var(--gold)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
+          <Check size={22} color="var(--gold-bright)" />
+        </div>
+        <h2 className="lp-serif" style={{ fontSize: 32, marginBottom: 10 }}>Order received</h2>
+        <p style={{ color: "var(--muted)", fontSize: 13.5, lineHeight: 1.7, marginBottom: 28 }}>
+          Payment received — thank you. Your order is confirmed.
+        </p>
+        <div style={{ border: "1px solid var(--gold)", padding: "22px 20px", marginBottom: 24 }}>
+          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Order Number</div>
+          <div className="lp-serif" style={{ fontSize: 30, letterSpacing: "0.06em", color: "var(--gold-bright)", marginBottom: 10 }}>{order.reference}</div>
+          <div style={{ fontSize: 14 }}>Paid: <span style={{ color: "var(--gold-bright)" }}>${order.total}</span></div>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7 }}>
+          We've emailed your confirmation. Your order will be packed and shipped shortly{order.preorder ? " (pre-orders ship on the pre-order timeline)" : ""}. Questions? {SITE_CONFIG.ordersEmail}
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 22 }}>
+          <button className="lp-btn" onClick={() => setPage("orders")}>View My Orders</button>
+          <button className="lp-btn lp-btn-solid" onClick={() => setPage("home")}>Return Home</button>
+        </div>
       </div>
     );
   }
@@ -3868,7 +3894,7 @@ function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, onArchive
   const shipped = /shipped/i.test(o.status || "");
   const cust = o.customer || {};
   const fmt = (c) => "$" + ((Number(c) || 0) / 100).toFixed(2);
-  const methodLabel = { bank: "Bank transfer", cashapp: "Cash App", zelle: "Zelle", crypto: "Crypto (USDC)" }[o.method] || o.method || "—";
+  const methodLabel = { bank: "Bank transfer", cashapp: "Cash App", zelle: "Zelle", crypto: "Crypto (USDC)", card: "Card" }[o.method] || o.method || "—";
   const date = o.created_at ? new Date(o.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const cityZip = [[cust.city, cust.state].filter(Boolean).join(", "), cust.zip].filter(Boolean).join(" ");
   const addressText = [cust.name, cust.address, cityZip, cust.country].filter(Boolean).join("\n");
