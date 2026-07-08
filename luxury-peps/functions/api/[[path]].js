@@ -172,6 +172,15 @@ export async function onRequest(context) {
     if (path === "/api/owner/mark-shipped" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
       await db.run("update orders set status='shipped' where reference=? and paid_at is not null", body.orderId);
+      const order = await db.first("select reference, email from orders where reference=?", body.orderId);
+      if (order && order.email) {
+        const tracking = String(body.tracking || "").trim();
+        await sendEmail(env, {
+          to: order.email,
+          subject: `Your Luxury Peps order ${order.reference} has shipped`,
+          html: `<div style="font-family:Arial,sans-serif;max-width:520px"><h2 style="margin:0 0 6px">Your order is on the way</h2><p>Good news — order <b>${order.reference}</b> has shipped.</p>${tracking ? `<p style="background:#faf7f2;border:1px solid #e6ddcd;padding:10px 12px;border-radius:6px"><b>Tracking number:</b> ${esc(tracking)}</p>` : ""}<p>Thank you for your order.</p></div>`,
+        });
+      }
       return J({ ok: true });
     }
     if (path === "/api/owner/payout" && method === "POST") {
