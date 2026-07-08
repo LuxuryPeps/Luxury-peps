@@ -2874,8 +2874,9 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
     const t = setTimeout(() => { try { if (formRef.current) formRef.current.submit(); } catch (_) {} }, 60);
     return () => { clearTimeout(t); };
   }, []);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, maxWidth: "100%", maxHeight: "100%", overflow: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
