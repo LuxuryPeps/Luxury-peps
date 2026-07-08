@@ -475,6 +475,7 @@ export async function onRequest(context) {
 // ── Owner dashboard aggregation ─────────────────────────────────────────
 async function ownerOverview(db, PREORDER) {
   const codes = await db.all("select code, creator, pct, builtin from ambassadors where active=1 order by builtin desc, code");
+  try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
   const t = (await db.first(`
     select
       count(case when paid_at is not null then 1 end) as paid_orders,
@@ -483,17 +484,16 @@ async function ownerOverview(db, PREORDER) {
       count(case when paid_at is null then 1 end) as pending_orders,
       coalesce(sum(case when paid_at is null then total_cents else 0 end),0) as pending_sales,
       count(*) as total_orders
-    from orders`)) || {};
-  const byCreator = await db.all("select code as creator_code, count(*) as orders, sum(total_cents) as sales_cents, sum(commission_cents) as commission_cents from orders where paid_at is not null and code is not null group by code");
-  try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
+    from orders where coalesce(archived,0)=0`)) || {};
+  const byCreator = await db.all("select code as creator_code, count(*) as orders, sum(total_cents) as sales_cents, sum(commission_cents) as commission_cents from orders where paid_at is not null and code is not null and coalesce(archived,0)=0 group by code");
   const recentRows = await db.all("select o.reference as id, o.code as creator_code, o.status, o.total_cents, o.method, o.customer, o.created_at, coalesce(o.archived,0) as archived, coalesce((select json_group_array(json_object('name', oi.name, 'qty', oi.qty, 'line_cents', oi.line_cents)) from order_items oi where oi.order_ref = o.reference), '[]') as items_json from orders o order by o.created_at desc limit 50");
   const recent = recentRows.map((r) => {
     let customer = {}; try { customer = JSON.parse(r.customer || "{}"); } catch (_) { customer = {}; }
     let items = []; try { items = JSON.parse(r.items_json || "[]"); } catch (_) { items = []; }
     return { id: r.id, creator_code: r.creator_code, status: r.status, total_cents: r.total_cents, method: r.method, created_at: r.created_at, customer, items, archived: !!r.archived };
   });
-  const dayRows = await db.all("select date(paid_at) as day, sum(total_cents) as cents from orders where paid_at is not null group by date(paid_at)");
-  const bestSellers = await db.all("select oi.name as name, sum(oi.qty) as qty from order_items oi join orders o on o.reference = oi.order_ref where o.paid_at is not null group by oi.name order by qty desc limit 6");
+  const dayRows = await db.all("select date(paid_at) as day, sum(total_cents) as cents from orders where paid_at is not null and coalesce(archived,0)=0 group by date(paid_at)");
+  const bestSellers = await db.all("select oi.name as name, sum(oi.qty) as qty from order_items oi join orders o on o.reference = oi.order_ref where o.paid_at is not null and coalesce(o.archived,0)=0 group by oi.name order by qty desc limit 6");
   const payoutRows = await db.all("select code, sum(amount_cents) as cents from payouts group by code");
   const paidOutByCode = {};
   let paidOutTotal = 0;
@@ -512,6 +512,7 @@ async function ownerOverview(db, PREORDER) {
 
 // ── Single-ambassador stats ─────────────────────────────────────────────
 async function creatorStats(db, amb) {
+  try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
   const t = (await db.first(`
     select
       count(case when paid_at is not null then 1 end) as paid_orders,
@@ -521,9 +522,9 @@ async function creatorStats(db, amb) {
       coalesce(sum(case when paid_at is null then total_cents else 0 end),0) as pend_sales,
       coalesce(sum(case when paid_at is null then commission_cents else 0 end),0) as pend_comm,
       count(*) as total_orders
-    from orders where code=?`, amb.code)) || {};
-  const recent = await db.all("select reference as id, status, total_cents, commission_cents from orders where code=? order by created_at desc limit 12", amb.code);
-  const dayRows = await db.all("select date(paid_at) as day, sum(commission_cents) as cents from orders where code=? and paid_at is not null group by date(paid_at)", amb.code);
+    from orders where code=? and coalesce(archived,0)=0`, amb.code)) || {};
+  const recent = await db.all("select reference as id, status, total_cents, commission_cents from orders where code=? and coalesce(archived,0)=0 order by created_at desc limit 12", amb.code);
+  const dayRows = await db.all("select date(paid_at) as day, sum(commission_cents) as cents from orders where code=? and paid_at is not null and coalesce(archived,0)=0 group by date(paid_at)", amb.code);
   return {
     code: amb.code, creator: amb.creator, discountPct: amb.pct, commissionPct: 0.10,
     paid: { orders: t.paid_orders || 0, salesCents: t.paid_sales || 0, commissionCents: t.paid_comm || 0 },
