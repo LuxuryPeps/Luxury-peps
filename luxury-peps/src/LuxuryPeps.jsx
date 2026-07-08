@@ -2860,8 +2860,8 @@ function Orders({ setPage }) {
 // relays resize/cancel/transactResponse messages back here.
 function AnetHostedModal({ token, env, onApproved, onCancel }) {
   const formRef = useRef(null);
-  const fitW = () => (typeof window !== "undefined" ? Math.min(460, window.innerWidth - 20) : 440);
-  const [size, setSize] = useState({ w: fitW(), h: 600 });
+  const [win, setWin] = useState(() => ({ w: typeof window !== "undefined" ? window.innerWidth : 400, h: typeof window !== "undefined" ? window.innerHeight : 800 }));
+  const [formH, setFormH] = useState(600);
   const payUrl = env === "production" ? "https://accept.authorize.net/payment/payment" : "https://test.authorize.net/payment/payment";
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -2870,18 +2870,23 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
     window.AuthorizeNetIFrame.onReceiveCommunication = (qstr) => {
       const params = {};
       String(qstr || "").split("&").forEach((kv) => { const idx = kv.indexOf("="); if (idx > 0) params[kv.slice(0, idx)] = decodeURIComponent(kv.slice(idx + 1) || ""); });
-      if (params.action === "resizeWindow") { const h = parseInt(params.height, 10); setSize((s) => ({ w: fitW(), h: h ? h + 20 : s.h })); }
+      if (params.action === "resizeWindow") { const h = parseInt(params.height, 10); if (h) setFormH(h + 20); }
       else if (params.action === "cancel") { onCancel(); }
       else if (params.action === "transactResponse") { let resp = {}; try { resp = JSON.parse(params.response || "{}"); } catch (_) { resp = {}; } onApproved(resp); }
     };
-    const onResize = () => setSize((s) => ({ ...s, w: fitW() }));
+    const onResize = () => setWin({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener("resize", onResize);
     const t = setTimeout(() => { try { if (formRef.current) formRef.current.submit(); } catch (_) {} }, 60);
     return () => { clearTimeout(t); window.removeEventListener("resize", onResize); document.body.style.overflow = prevOverflow; };
   }, []);
+  const isMobile = win.w < 640;
+  const boxW = Math.min(460, win.w - 20);
+  // Mobile: natural form height, top-aligned, overlay scrolls. Desktop: cap to the
+  // screen so the whole form fits (scrolls inside the frame if it's taller).
+  const iframeH = isMobile ? formH : Math.max(360, Math.min(formH, Math.round(win.h * 0.9) - 46));
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "44px 10px 24px", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: size.w, maxWidth: "100%", margin: "0 auto" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "72px 10px 24px" : 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: boxW, maxWidth: "100%", margin: isMobile ? "0 auto" : "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
           <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "2px 6px" }}>×</button>
@@ -2889,7 +2894,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
         <form ref={formRef} action={payUrl} method="post" target="anetIframe" style={{ margin: 0 }}>
           <input type="hidden" name="token" value={token} />
         </form>
-        <iframe name="anetIframe" title="Card payment" width="100%" height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: "100%", height: size.h, background: "#fff", borderRadius: 2, display: "block" }} />
+        <iframe name="anetIframe" title="Card payment" width="100%" height={iframeH} frameBorder="0" scrolling="auto" style={{ border: "none", width: "100%", height: iframeH, background: "#fff", borderRadius: 2, display: "block" }} />
       </div>
     </div>
   );
@@ -3807,6 +3812,7 @@ function buildDataFromOrders(orders) {
   let pendingSales = 0, paidSales = 0, paidCount = 0, pendCount = 0;
   const byCode = {}, itemQty = {}, dayTotals = {};
   for (const o of list) {
+    if (o.archived) continue; // archived orders don't count toward any totals
     const total = Number(o.total) || 0;
     const paid = /(paid|shipped)/i.test(o.status || "") && !/await/i.test(o.status || "");
     if (paid) { paidSales += total; paidCount++; } else { pendingSales += total; pendCount++; }
@@ -3834,7 +3840,7 @@ function buildDataFromOrders(orders) {
   return {
     preview: true, local: true, preorder: true, commissionPct: 0.10, codes: [],
     paidOrders: paidCount, paidSalesCents: cents(paidSales), commissionOwedCents: 0,
-    pendingOrders: pendCount, pendingSalesCents: cents(pendingSales), totalOrders: list.length,
+    pendingOrders: pendCount, pendingSalesCents: cents(pendingSales), totalOrders: list.filter((o) => !o.archived).length,
     byCreator: Object.values(byCode), recent, series, bestSellers, paidOutByCode: {},
   };
 }
@@ -3843,7 +3849,7 @@ function buildDataFromOrders(orders) {
 // mode) so a test order placed with their code shows up before the backend is live.
 function buildCreatorFromOrders(orders, code, info) {
   const cents = (v) => Math.round((Number(v) || 0) * 100);
-  const mine = (Array.isArray(orders) ? orders : []).filter((o) => String(o.code || "").toUpperCase() === code);
+  const mine = (Array.isArray(orders) ? orders : []).filter((o) => String(o.code || "").toUpperCase() === code && !o.archived);
   let paidO = 0, paidS = 0, paidC = 0, pendO = 0, pendS = 0, pendC = 0;
   const recent = [];
   for (const o of mine.slice().reverse()) {
