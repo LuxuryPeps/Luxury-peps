@@ -2883,10 +2883,11 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
   const boxW = Math.min(460, win.w - 20);
   // Mobile: natural form height, top-aligned, overlay scrolls. Desktop: cap to the
   // screen so the whole form fits (scrolls inside the frame if it's taller).
+  const padTop = isMobile ? Math.max(56, Math.round(win.h * 0.16)) : 40;
   const iframeH = isMobile ? formH : Math.max(360, Math.min(formH, Math.round(win.h * 0.9) - 46));
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "72px 10px 24px" : 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: boxW, maxWidth: "100%", margin: isMobile ? "0 auto" : "auto" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: padTop, paddingLeft: 12, paddingRight: 12, paddingBottom: 24, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: boxW, maxWidth: "100%", margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
           <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "2px 6px" }}>×</button>
