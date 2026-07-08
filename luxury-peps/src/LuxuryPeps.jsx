@@ -2876,9 +2876,9 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
   }, []);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
   const vw = typeof window !== "undefined" ? window.innerWidth : 900;
-  const dispW = isMobile ? Math.min(size.w, vw - 20) : Math.max(size.w, 600);
+  const dispW = isMobile ? Math.min(size.w, vw - 20) : Math.max(size.w, 640);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "52px 12px 24px" : 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "80px 12px 24px" : 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, maxWidth: "100%", maxHeight: "100%", overflow: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
