@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { ShoppingBag, X, Menu, ChevronRight, ChevronLeft, Check, Minus, Plus, Beaker, ShieldCheck, Truck, Mail, FileText, AlertCircle, Loader2, Lock, LogOut, Eye, EyeOff, Phone, Sparkles, Star, Search, MessageCircle, Send, Copy, Share2, TrendingUp, Wallet, DollarSign, LayoutDashboard, Ruler, Users } from "lucide-react";
+import { ShoppingBag, X, Menu, ChevronRight, ChevronLeft, Check, Minus, Plus, Beaker, ShieldCheck, Truck, Mail, FileText, AlertCircle, Loader2, Lock, LogOut, Eye, EyeOff, Phone, Sparkles, Star, Search, MessageCircle, Send, Copy, Share2, TrendingUp, Wallet, DollarSign, LayoutDashboard, Ruler } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────
 // SITE CONFIG — edit these once and they propagate across the whole site
@@ -2860,32 +2860,35 @@ function Orders({ setPage }) {
 // relays resize/cancel/transactResponse messages back here.
 function AnetHostedModal({ token, env, onApproved, onCancel }) {
   const formRef = useRef(null);
+  const [size, setSize] = useState({ w: 480, h: 640 });
   const payUrl = env === "production" ? "https://accept.authorize.net/payment/payment" : "https://test.authorize.net/payment/payment";
   useEffect(() => {
-    // Lock background scroll while the full-screen payment view is open.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     window.AuthorizeNetIFrame = window.AuthorizeNetIFrame || {};
     window.AuthorizeNetIFrame.onReceiveCommunication = (qstr) => {
       const params = {};
       String(qstr || "").split("&").forEach((kv) => { const idx = kv.indexOf("="); if (idx > 0) params[kv.slice(0, idx)] = decodeURIComponent(kv.slice(idx + 1) || ""); });
-      // resizeWindow is ignored on purpose — the card form fills the whole screen.
-      if (params.action === "cancel") { onCancel(); }
+      if (params.action === "resizeWindow") { const w = parseInt(params.width, 10), h = parseInt(params.height, 10); if (w && h) setSize({ w: Math.min(w, 700), h: h + 20 }); }
+      else if (params.action === "cancel") { onCancel(); }
       else if (params.action === "transactResponse") { let resp = {}; try { resp = JSON.parse(params.response || "{}"); } catch (_) { resp = {}; } onApproved(resp); }
     };
     const t = setTimeout(() => { try { if (formRef.current) formRef.current.submit(); } catch (_) {} }, 60);
-    return () => { clearTimeout(t); document.body.style.overflow = prevOverflow; };
+    return () => { clearTimeout(t); };
   }, []);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 900;
+  const dispW = isMobile ? Math.min(size.w, vw - 20) : Math.max(size.w, 640);
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#0b0b0d", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--gold)", background: "#0b0b0d", flex: "0 0 auto" }}>
-        <span style={{ fontSize: 13, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 7 }}><Lock size={13} color="var(--gold)" /> Secure card payment</span>
-        <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 26, lineHeight: 1, padding: "0 4px" }}>×</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "80px 12px 24px" : 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, maxWidth: "100%", maxHeight: "100%", overflow: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
+          <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <form ref={formRef} action={payUrl} method="post" target="anetIframe">
+          <input type="hidden" name="token" value={token} />
+        </form>
+        <iframe name="anetIframe" title="Card payment" width={dispW} height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: dispW, height: size.h, background: "#fff", borderRadius: 2 }} />
       </div>
-      <form ref={formRef} action={payUrl} method="post" target="anetIframe" style={{ display: "none" }}>
-        <input type="hidden" name="token" value={token} />
-      </form>
-      <iframe name="anetIframe" title="Card payment" frameBorder="0" style={{ flex: "1 1 auto", width: "100%", height: "100%", border: "none", background: "#fff" }} />
     </div>
   );
 }
@@ -4033,7 +4036,6 @@ function OwnerPortal({ setPage }) {
   };
   const [orderQuery, setOrderQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | awaiting | paid | shipped
-  const [orderSort, setOrderSort] = useState("newest"); // newest | oldest | high | low
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -4453,18 +4455,6 @@ function OwnerPortal({ setPage }) {
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}><TrendingUp size={14} color="var(--gold-bright)" /><div className="lp-eyebrow">Revenue — Last 14 Days</div></div>
           {seriesUSD.some((v) => v > 0) && <div style={{ fontSize: 11.5, color: trendUp ? "var(--gold-bright)" : "#e0a0a0" }}>{trendUp ? "▲" : "▼"} {Math.abs(trendPct)}% wk/wk</div>}
         </div>
-        {seriesUSD.some((v) => v > 0) && (() => {
-          const today = seriesUSD[seriesUSD.length - 1] || 0;
-          let bestIdx = 0; seriesUSD.forEach((v, i) => { if (v > seriesUSD[bestIdx]) bestIdx = i; });
-          const total14 = seriesUSD.reduce((a, b) => a + b, 0);
-          return (
-            <div style={{ display: "flex", gap: 18, fontSize: 11.5, color: "var(--muted)", marginBottom: 14, flexWrap: "wrap" }}>
-              <span>Today <b style={{ color: "var(--cream)" }}>${today.toFixed(2)}</b></span>
-              <span>Best day <b style={{ color: "var(--cream)" }}>${seriesUSD[bestIdx].toFixed(2)}</b> · {seriesLabels[bestIdx]}</span>
-              <span>14-day total <b style={{ color: "var(--cream)" }}>${total14.toFixed(2)}</b></span>
-            </div>
-          );
-        })()}
         {seriesUSD.some((v) => v > 0)
           ? <SparkBars data={seriesUSD} labels={seriesLabels} format={(v) => "$" + v} accent="var(--gold)" />
           : <p style={{ color: "var(--muted)", fontSize: 13, margin: 0, lineHeight: 1.7 }}>No sales in this window yet. Daily revenue will chart here as paid orders come in.</p>}
@@ -4487,30 +4477,6 @@ function OwnerPortal({ setPage }) {
           </div>
         )}
       </div>
-
-      {/* Sales by ambassador */}
-      {(() => {
-        const rows = ((view.byCreator) || [])
-          .map((r) => ({ code: r.creator_code, orders: r.orders || 0, sales: r.sales_cents || 0, comm: r.commission_cents || 0 }))
-          .filter((r) => r.code && r.sales > 0)
-          .sort((a, b) => b.sales - a.sales)
-          .slice(0, 6);
-        if (rows.length === 0) return null;
-        const nameFor = (code) => { const a = ambassadors.find((x) => String(x.code).toUpperCase() === String(code).toUpperCase()); return a ? a.creator : code; };
-        return (
-          <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}><Users size={14} color="var(--gold-bright)" /><div className="lp-eyebrow">Sales by Ambassador</div></div>
-            <div style={{ fontSize: 13 }}>
-              {rows.map((r, i) => (
-                <div key={r.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)", gap: 10, flexWrap: "wrap" }}>
-                  <span style={{ color: "var(--cream)" }}>{i + 1}. {nameFor(r.code)} <span style={{ color: "var(--muted)", fontSize: 11 }}>· {r.code}</span></span>
-                  <span style={{ color: "var(--gold-bright)" }}>{money(r.sales)} <span style={{ color: "var(--muted)", fontSize: 11 }}>· {r.orders} order{r.orders === 1 ? "" : "s"} · {money(r.comm)} comm</span></span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Inventory */}
       <InventoryPanel inventory={inventory} setInventory={setInventory} threshold={invThreshold} setThreshold={setInvThreshold} />
@@ -4586,17 +4552,7 @@ function OwnerPortal({ setPage }) {
             if (statusFilter === "shipped" && !isShipped) return false;
             if (!q) return true;
             const c = o.customer || {};
-            const items = (o.items || []).map((it) => it.name).join(" ");
-            return [o.id, o.creator_code, c.name, c.email, c.city, o.method, items].some((v) => String(v || "").toLowerCase().includes(q));
-          });
-          const sorted = [...filtered].sort((a, b) => {
-            if (orderSort === "high" || orderSort === "low") {
-              const d = (b.total_cents || 0) - (a.total_cents || 0);
-              return orderSort === "high" ? d : -d;
-            }
-            const ta = new Date(a.created_at || 0).getTime() || 0;
-            const tb = new Date(b.created_at || 0).getTime() || 0;
-            return orderSort === "oldest" ? ta - tb : tb - ta;
+            return [o.id, o.creator_code, c.name, c.email].some((v) => String(v || "").toLowerCase().includes(q));
           });
           return (
             <>
@@ -4612,12 +4568,6 @@ function OwnerPortal({ setPage }) {
                     <button key={key} onClick={() => setStatusFilter(key)} style={{ fontSize: 10.5, padding: "6px 11px", cursor: "pointer", border: "none", background: statusFilter === key ? "var(--gold)" : "transparent", color: statusFilter === key ? "var(--bg)" : "var(--muted)" }}>{label}</button>
                   ))}
                 </div>
-                <select value={orderSort} onChange={(e) => setOrderSort(e.target.value)} style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", padding: "6px 8px", fontSize: 10.5, outline: "none", cursor: "pointer" }}>
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="high">Highest $</option>
-                  <option value="low">Lowest $</option>
-                </select>
                 <button className="lp-btn" onClick={exportOrdersCsv} style={{ fontSize: 10.5, padding: "7px 12px" }}>Export CSV</button>
               </div>
               {all.length > 0 && (() => {
@@ -4641,7 +4591,7 @@ function OwnerPortal({ setPage }) {
                 <p style={{ color: "var(--muted)", fontSize: 13, margin: "4px 0 12px", lineHeight: 1.7 }}>No orders match — clear the search or filter.</p>
               ) : (
                 <div style={{ fontSize: 12.5 }}>
-                  {sorted.map((o, i) => (
+                  {filtered.map((o, i) => (
                     <OrderRow key={o.id} o={o} first={i === 0} onMarkPaid={markPaid} onMarkUnpaid={markUnpaid} onMarkShipped={markShipped} onArchive={archiveOrder} canMarkPaid={!sampleMode} />
                   ))}
                   {(q || statusFilter !== "all") && <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 0 6px" }}>{filtered.length} of {all.length} orders</div>}
