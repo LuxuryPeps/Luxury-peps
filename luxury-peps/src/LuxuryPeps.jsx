@@ -2860,42 +2860,31 @@ function Orders({ setPage }) {
 // relays resize/cancel/transactResponse messages back here.
 function AnetHostedModal({ token, env, onApproved, onCancel }) {
   const formRef = useRef(null);
-  const [win, setWin] = useState(() => ({ w: typeof window !== "undefined" ? window.innerWidth : 400, h: typeof window !== "undefined" ? window.innerHeight : 800 }));
-  const [formH, setFormH] = useState(600);
+  const [size, setSize] = useState({ w: 480, h: 640 });
   const payUrl = env === "production" ? "https://accept.authorize.net/payment/payment" : "https://test.authorize.net/payment/payment";
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     window.AuthorizeNetIFrame = window.AuthorizeNetIFrame || {};
     window.AuthorizeNetIFrame.onReceiveCommunication = (qstr) => {
       const params = {};
       String(qstr || "").split("&").forEach((kv) => { const idx = kv.indexOf("="); if (idx > 0) params[kv.slice(0, idx)] = decodeURIComponent(kv.slice(idx + 1) || ""); });
-      if (params.action === "resizeWindow") { const h = parseInt(params.height, 10); if (h) setFormH(h + 20); }
+      if (params.action === "resizeWindow") { const w = parseInt(params.width, 10), h = parseInt(params.height, 10); if (w && h) setSize({ w: Math.min(w, 560), h: h + 20 }); }
       else if (params.action === "cancel") { onCancel(); }
       else if (params.action === "transactResponse") { let resp = {}; try { resp = JSON.parse(params.response || "{}"); } catch (_) { resp = {}; } onApproved(resp); }
     };
-    const onResize = () => setWin({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener("resize", onResize);
     const t = setTimeout(() => { try { if (formRef.current) formRef.current.submit(); } catch (_) {} }, 60);
-    return () => { clearTimeout(t); window.removeEventListener("resize", onResize); document.body.style.overflow = prevOverflow; };
+    return () => { clearTimeout(t); };
   }, []);
-  const isMobile = win.w < 640;
-  const boxW = Math.min(460, win.w - 20);
-  // Mobile: natural form height, top-aligned, overlay scrolls. Desktop: cap to the
-  // screen so the whole form fits (scrolls inside the frame if it's taller).
-  const padTop = isMobile ? Math.max(56, Math.round(win.h * 0.16)) : 40;
-  const iframeH = Math.max(300, Math.min(formH, 440));
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: padTop, paddingLeft: 12, paddingRight: 12, paddingBottom: 24, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: boxW, maxWidth: "100%", margin: "0 auto" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, maxWidth: "100%", maxHeight: "100%", overflow: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
-          <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "2px 6px" }}>×</button>
+          <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
         </div>
-        <form ref={formRef} action={payUrl} method="post" target="anetIframe" style={{ margin: 0 }}>
+        <form ref={formRef} action={payUrl} method="post" target="anetIframe">
           <input type="hidden" name="token" value={token} />
         </form>
-        <iframe name="anetIframe" title="Card payment" width="100%" height={iframeH} frameBorder="0" scrolling="auto" style={{ border: "none", width: "100%", height: iframeH, background: "#fff", borderRadius: 2, display: "block" }} />
+        <iframe name="anetIframe" title="Card payment" width={size.w} height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: size.w, height: size.h, background: "#fff", borderRadius: 2 }} />
       </div>
     </div>
   );
