@@ -2860,8 +2860,8 @@ function Orders({ setPage }) {
 // relays resize/cancel/transactResponse messages back here.
 function AnetHostedModal({ token, env, onApproved, onCancel }) {
   const formRef = useRef(null);
-  const fitW = () => (typeof window !== "undefined" ? Math.min(560, window.innerWidth - 24) : 520);
-  const [size, setSize] = useState({ w: fitW(), h: 640 });
+  const fitW = () => (typeof window !== "undefined" ? Math.min(430, window.innerWidth - 20) : 420);
+  const [size, setSize] = useState({ w: fitW(), h: 560 });
   const payUrl = env === "production" ? "https://accept.authorize.net/payment/payment" : "https://test.authorize.net/payment/payment";
   useEffect(() => {
     // Lock background scroll while the payment modal is open.
@@ -2886,9 +2886,10 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
     const t = setTimeout(() => { try { if (formRef.current) formRef.current.submit(); } catch (_) {} }, 60);
     return () => { clearTimeout(t); window.removeEventListener("resize", onResize); document.body.style.overflow = prevOverflow; };
   }, []);
+  const iframeH = Math.min(size.h, (typeof window !== "undefined" ? window.innerHeight - 92 : size.h));
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "14px 12px", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, width: size.w, maxWidth: "100%", margin: "0 auto" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", padding: 12, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 10, width: size.w, maxWidth: "100%", margin: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
           <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "2px 6px" }}>×</button>
@@ -2896,7 +2897,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
         <form ref={formRef} action={payUrl} method="post" target="anetIframe" style={{ margin: 0 }}>
           <input type="hidden" name="token" value={token} />
         </form>
-        <iframe name="anetIframe" title="Card payment" width="100%" height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: "100%", height: size.h, background: "#fff", borderRadius: 2, display: "block" }} />
+        <iframe name="anetIframe" title="Card payment" width="100%" height={iframeH} frameBorder="0" scrolling="auto" style={{ border: "none", width: "100%", height: iframeH, background: "#fff", borderRadius: 2, display: "block" }} />
       </div>
     </div>
   );
