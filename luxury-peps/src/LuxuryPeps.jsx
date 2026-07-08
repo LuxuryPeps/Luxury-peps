@@ -19,7 +19,7 @@ const SITE_CONFIG = {
   hours: "Mon–Fri, 9am–5pm",
   // Pre-order: flip `preorder` to false the moment stock arrives.
   preorder: true,
-  preorderShipEstimate: "1–2 weeks",
+  preorderShipEstimate: "5–10 days",
   effectiveDate: "June 27, 2026",
   freeShipThreshold: 150,
   flatShip: 12,
@@ -2888,7 +2888,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
   }, []);
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "14px 12px", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, width: size.w, maxWidth: "100%", margin: "auto" }}>
+      <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, width: size.w, maxWidth: "100%", margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
           <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "2px 6px" }}>×</button>
@@ -3836,6 +3836,7 @@ function buildDataFromOrders(orders) {
     total_cents: cents(o.total), method: o.method || null, created_at: o.placedAt || null,
     customer: o.customer || {},
     items: (o.items || []).map((it) => ({ name: it.name, size: it.size, qty: it.qty, line_cents: cents(it.line) })),
+    archived: !!o.archived,
   }));
   return {
     preview: true, local: true, preorder: true, commissionPct: 0.10, codes: [],
@@ -3869,7 +3870,7 @@ function buildCreatorFromOrders(orders, code, info) {
 
 // Expandable order row: tap to reveal items, shipping address, and payment;
 // includes a Mark-as-Paid action (works live via API or locally in browser mode).
-function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, canMarkPaid }) {
+function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, onArchive, canMarkPaid }) {
   const [open, setOpen] = useState(false);
   const paid = /(paid|shipped)/i.test(o.status || "") && !/await/i.test(o.status || "");
   const shipped = /shipped/i.test(o.status || "");
@@ -3921,20 +3922,23 @@ function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, canMarkPa
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Payment: <span style={{ color: "var(--cream)" }}>{methodLabel}</span></div>
-            {!paid && canMarkPaid && <button className="lp-btn lp-btn-solid" onClick={(e) => { e.stopPropagation(); onMarkPaid(o.id); }} style={{ fontSize: 11.5, padding: "8px 16px" }}>Mark as Paid</button>}
-            {paid && !shipped && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11.5, color: "#8fca8f", display: "inline-flex", alignItems: "center", gap: 5 }}><Check size={13} /> Paid</span>
-                {canMarkPaid && <button className="lp-btn lp-btn-solid" onClick={(e) => { e.stopPropagation(); onMarkShipped(o.id); }} style={{ fontSize: 11, padding: "6px 13px" }}>Mark shipped</button>}
-                {canMarkPaid && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onMarkUnpaid(o.id); }} style={{ fontSize: 10.5, padding: "5px 10px" }}>Mark unpaid</button>}
-              </div>
-            )}
-            {shipped && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 11.5, color: "#9ec3ee", display: "inline-flex", alignItems: "center", gap: 5 }}><Truck size={13} /> Shipped</span>
-                {canMarkPaid && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onMarkPaid(o.id); }} style={{ fontSize: 10.5, padding: "5px 10px" }}>Back to paid</button>}
-              </div>
-            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {!paid && canMarkPaid && <button className="lp-btn lp-btn-solid" onClick={(e) => { e.stopPropagation(); onMarkPaid(o.id); }} style={{ fontSize: 11.5, padding: "8px 16px" }}>Mark as Paid</button>}
+              {paid && !shipped && (
+                <>
+                  <span style={{ fontSize: 11.5, color: "#8fca8f", display: "inline-flex", alignItems: "center", gap: 5 }}><Check size={13} /> Paid</span>
+                  {canMarkPaid && <button className="lp-btn lp-btn-solid" onClick={(e) => { e.stopPropagation(); onMarkShipped(o.id); }} style={{ fontSize: 11, padding: "6px 13px" }}>Mark shipped</button>}
+                  {canMarkPaid && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onMarkUnpaid(o.id); }} style={{ fontSize: 10.5, padding: "5px 10px" }}>Mark unpaid</button>}
+                </>
+              )}
+              {shipped && (
+                <>
+                  <span style={{ fontSize: 11.5, color: "#9ec3ee", display: "inline-flex", alignItems: "center", gap: 5 }}><Truck size={13} /> Shipped</span>
+                  {canMarkPaid && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onMarkPaid(o.id); }} style={{ fontSize: 10.5, padding: "5px 10px" }}>Back to paid</button>}
+                </>
+              )}
+              {canMarkPaid && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onArchive(o.id, !o.archived); }} style={{ fontSize: 10, padding: "5px 9px", opacity: 0.75 }}>{o.archived ? "Unarchive" : "Archive"}</button>}
+            </div>
           </div>
         </div>
       )}
@@ -4282,6 +4286,23 @@ function OwnerPortal({ setPage }) {
       await window.storage.set("orderHistory", JSON.stringify(updated), false);
     } catch (_) { /* ignore */ }
   };
+  const archiveOrder = async (orderId, archived) => {
+    if (live) {
+      try {
+        const res = await fetch(API_BASE + "/api/owner/archive", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin, orderId, archived }),
+        });
+        if (res.ok) refresh();
+      } catch (_) { /* no-op */ }
+      return;
+    }
+    try {
+      const updated = localOrders.map((o) => (o.reference === orderId ? { ...o, archived } : o));
+      setLocalOrders(updated);
+      await window.storage.set("orderHistory", JSON.stringify(updated), false);
+    } catch (_) { /* ignore */ }
+  };
 
   const recordPayout = async (code) => {
     if (!live) return;
@@ -4529,6 +4550,9 @@ function OwnerPortal({ setPage }) {
           const all = view.recent || [];
           const q = orderQuery.trim().toLowerCase();
           const filtered = all.filter((o) => {
+            const isArchived = !!o.archived;
+            if (statusFilter === "archived") { if (!isArchived) return false; }
+            else if (isArchived) return false;
             const isShipped = /shipped/i.test(o.status || "");
             const isPaid = /(paid|shipped)/i.test(o.status || "") && !/await/i.test(o.status || "");
             if (statusFilter === "awaiting" && isPaid) return false;
@@ -4548,18 +4572,19 @@ function OwnerPortal({ setPage }) {
                   style={{ flex: "1 1 200px", minWidth: 160, background: "transparent", border: "1px solid var(--line)", color: "var(--cream)", padding: "8px 11px", fontSize: 12.5, outline: "none" }}
                 />
                 <div style={{ display: "flex", border: "1px solid var(--line)" }}>
-                  {[["all", "All"], ["awaiting", "Awaiting"], ["paid", "Paid"], ["shipped", "Shipped"]].map(([key, label]) => (
+                  {[["all", "All"], ["awaiting", "Awaiting"], ["paid", "Paid"], ["shipped", "Shipped"], ["archived", "Archived"]].map(([key, label]) => (
                     <button key={key} onClick={() => setStatusFilter(key)} style={{ fontSize: 10.5, padding: "6px 11px", cursor: "pointer", border: "none", background: statusFilter === key ? "var(--gold)" : "transparent", color: statusFilter === key ? "var(--bg)" : "var(--muted)" }}>{label}</button>
                   ))}
                 </div>
                 <button className="lp-btn" onClick={exportOrdersCsv} style={{ fontSize: 10.5, padding: "7px 12px" }}>Export CSV</button>
               </div>
               {all.length > 0 && (() => {
+                const active = all.filter((o) => !o.archived);
                 const isPaid = (o) => /(paid|shipped)/i.test(o.status || "") && !/await/i.test(o.status || "");
                 const isShip = (o) => /shipped/i.test(o.status || "");
-                const awaiting = all.filter((o) => !isPaid(o)).length;
-                const paidN = all.filter((o) => isPaid(o) && !isShip(o)).length;
-                const shipN = all.filter((o) => isShip(o)).length;
+                const awaiting = active.filter((o) => !isPaid(o)).length;
+                const paidN = active.filter((o) => isPaid(o) && !isShip(o)).length;
+                const shipN = active.filter((o) => isShip(o)).length;
                 return (
                   <div style={{ display: "flex", gap: 16, fontSize: 11.5, color: "var(--muted)", marginBottom: 12, flexWrap: "wrap" }}>
                     <span><b style={{ color: "var(--gold-bright)" }}>{awaiting}</b> awaiting payment</span>
@@ -4575,7 +4600,7 @@ function OwnerPortal({ setPage }) {
               ) : (
                 <div style={{ fontSize: 12.5 }}>
                   {filtered.map((o, i) => (
-                    <OrderRow key={o.id} o={o} first={i === 0} onMarkPaid={markPaid} onMarkUnpaid={markUnpaid} onMarkShipped={markShipped} canMarkPaid={!sampleMode} />
+                    <OrderRow key={o.id} o={o} first={i === 0} onMarkPaid={markPaid} onMarkUnpaid={markUnpaid} onMarkShipped={markShipped} onArchive={archiveOrder} canMarkPaid={!sampleMode} />
                   ))}
                   {(q || statusFilter !== "all") && <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 0 6px" }}>{filtered.length} of {all.length} orders</div>}
                 </div>
