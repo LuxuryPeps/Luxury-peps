@@ -2867,7 +2867,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
     window.AuthorizeNetIFrame.onReceiveCommunication = (qstr) => {
       const params = {};
       String(qstr || "").split("&").forEach((kv) => { const idx = kv.indexOf("="); if (idx > 0) params[kv.slice(0, idx)] = decodeURIComponent(kv.slice(idx + 1) || ""); });
-      if (params.action === "resizeWindow") { const w = parseInt(params.width, 10), h = parseInt(params.height, 10); if (w && h) setSize({ w: Math.min(w, 560), h: h + 20 }); }
+      if (params.action === "resizeWindow") { const w = parseInt(params.width, 10), h = parseInt(params.height, 10); if (w && h) setSize({ w: Math.min(w, 700), h: h + 20 }); }
       else if (params.action === "cancel") { onCancel(); }
       else if (params.action === "transactResponse") { let resp = {}; try { resp = JSON.parse(params.response || "{}"); } catch (_) { resp = {}; } onApproved(resp); }
     };
@@ -2875,8 +2875,10 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
     return () => { clearTimeout(t); };
   }, []);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 900;
+  const dispW = isMobile ? Math.min(size.w, vw - 20) : Math.max(size.w, 600);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "52px 12px 24px" : 16, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <div style={{ background: "#0b0b0d", border: "1px solid var(--gold)", borderRadius: 4, padding: 12, maxWidth: "100%", maxHeight: "100%", overflow: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={12} color="var(--gold)" /> Secure card payment</span>
@@ -2885,7 +2887,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
         <form ref={formRef} action={payUrl} method="post" target="anetIframe">
           <input type="hidden" name="token" value={token} />
         </form>
-        <iframe name="anetIframe" title="Card payment" width={size.w} height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: size.w, height: size.h, background: "#fff", borderRadius: 2 }} />
+        <iframe name="anetIframe" title="Card payment" width={dispW} height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: dispW, height: size.h, background: "#fff", borderRadius: 2 }} />
       </div>
     </div>
   );
