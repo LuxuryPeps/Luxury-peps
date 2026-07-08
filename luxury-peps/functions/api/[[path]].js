@@ -183,6 +183,12 @@ export async function onRequest(context) {
       }
       return J({ ok: true });
     }
+    if (path === "/api/owner/archive" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
+      await db.run("update orders set archived=? where reference=?", body.archived ? 1 : 0, body.orderId);
+      return J({ ok: true });
+    }
     if (path === "/api/owner/payout" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
       const amt = Math.max(0, Math.round(Number(body.amountCents) || 0));
@@ -479,11 +485,12 @@ async function ownerOverview(db, PREORDER) {
       count(*) as total_orders
     from orders`)) || {};
   const byCreator = await db.all("select code as creator_code, count(*) as orders, sum(total_cents) as sales_cents, sum(commission_cents) as commission_cents from orders where paid_at is not null and code is not null group by code");
-  const recentRows = await db.all("select o.reference as id, o.code as creator_code, o.status, o.total_cents, o.method, o.customer, o.created_at, coalesce((select json_group_array(json_object('name', oi.name, 'qty', oi.qty, 'line_cents', oi.line_cents)) from order_items oi where oi.order_ref = o.reference), '[]') as items_json from orders o order by o.created_at desc limit 20");
+  try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
+  const recentRows = await db.all("select o.reference as id, o.code as creator_code, o.status, o.total_cents, o.method, o.customer, o.created_at, coalesce(o.archived,0) as archived, coalesce((select json_group_array(json_object('name', oi.name, 'qty', oi.qty, 'line_cents', oi.line_cents)) from order_items oi where oi.order_ref = o.reference), '[]') as items_json from orders o order by o.created_at desc limit 50");
   const recent = recentRows.map((r) => {
     let customer = {}; try { customer = JSON.parse(r.customer || "{}"); } catch (_) { customer = {}; }
     let items = []; try { items = JSON.parse(r.items_json || "[]"); } catch (_) { items = []; }
-    return { id: r.id, creator_code: r.creator_code, status: r.status, total_cents: r.total_cents, method: r.method, created_at: r.created_at, customer, items };
+    return { id: r.id, creator_code: r.creator_code, status: r.status, total_cents: r.total_cents, method: r.method, created_at: r.created_at, customer, items, archived: !!r.archived };
   });
   const dayRows = await db.all("select date(paid_at) as day, sum(total_cents) as cents from orders where paid_at is not null group by date(paid_at)");
   const bestSellers = await db.all("select oi.name as name, sum(oi.qty) as qty from order_items oi join orders o on o.reference = oi.order_ref where o.paid_at is not null group by oi.name order by qty desc limit 6");
