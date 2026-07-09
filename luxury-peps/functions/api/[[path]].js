@@ -173,6 +173,8 @@ async function ensureSchema(db) {
   await t("alter table orders add column shipped_at text");
   await t("create table if not exists promos (code text primary key, kind text not null default 'pct', value integer not null default 0, active integer not null default 1, expires_at text, max_uses integer, uses integer not null default 0, created_at text not null default (datetime('now')))");
   await t("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))");
+  await t("create table if not exists reviews (id integer primary key autoincrement, order_ref text not null, product_id text not null, email text not null, display_name text, rating integer not null, body text not null, status text not null default 'pending', created_at text not null default (datetime('now')), approved_at text)");
+  await t("create unique index if not exists reviews_one_per_product on reviews (order_ref, product_id)");
 }
 
 // ── Router ─────────────────────────────────────────────────────────────────
@@ -197,6 +199,81 @@ export async function onRequest(context) {
   const body = method === "POST" ? await request.json().catch(() => ({})) : {};
 
   try {
+    // ---- PUBLIC: approved reviews for one product --------------------------
+    if (path.startsWith("/api/reviews/") && method === "GET") {
+      const pid = path.slice("/api/reviews/".length).replace(/[^a-zA-Z0-9]/g, "");
+      if (!pid) return J({ reviews: [], count: 0, average: 0 });
+      const rows = await db.all("select id, display_name, rating, body, created_at from reviews where product_id=? and status='approved' order by created_at desc limit 50", pid);
+      const count = rows.length;
+      const average = count ? Math.round((rows.reduce((a, r) => a + (r.rating || 0), 0) / count) * 10) / 10 : 0;
+      return J({ reviews: rows, count, average });
+    }
+
+    // ---- PUBLIC: rating summary for every product (one call for the catalog)
+    if (path === "/api/reviews-summary" && method === "GET") {
+      const rows = await db.all("select product_id, count(*) as count, avg(rating) as average from reviews where status='approved' group by product_id");
+      const out = {};
+      for (const r of rows) out[r.product_id] = { count: r.count, average: Math.round((r.average || 0) * 10) / 10 };
+      return J({ summary: out });
+    }
+
+    // ---- PUBLIC: which products may this order review? ----------------------
+    if (path === "/api/review/eligible" && method === "GET") {
+      const ref = upper(String(qs.get("ref") || "").trim());
+      const email = String(qs.get("email") || "").toLowerCase().trim();
+      if (!ref || !email) return J({ error: "Enter your order number and email." }, 400);
+      const o = await db.first("select reference, email, status, paid_at from orders where reference=?", ref);
+      if (!o || String(o.email || "").toLowerCase() !== email) return J({ error: "We couldn't find an order with that number and email." }, 404);
+      if (!o.paid_at && o.status !== "shipped") return J({ error: "You can leave a review once your order is paid." }, 403);
+      const items = await db.all("select distinct product_id, name from order_items where order_ref=?", ref);
+      const done = await db.all("select product_id from reviews where order_ref=?", ref);
+      const doneSet = new Set(done.map((d) => d.product_id));
+      return J({ products: items.filter((i) => !doneSet.has(i.product_id)), alreadyReviewed: [...doneSet] });
+    }
+
+    // ---- PUBLIC: submit a review (verified purchase only, held for approval)
+    if (path === "/api/review/submit" && method === "POST") {
+      const ref = upper(String(body.ref || "").trim());
+      const email = String(body.email || "").toLowerCase().trim();
+      const pid = String(body.productId || "").replace(/[^a-zA-Z0-9]/g, "");
+      const rating = Math.max(1, Math.min(5, Math.floor(Number(body.rating) || 0)));
+      const text = String(body.body || "").trim().slice(0, 1200);
+      const name = String(body.displayName || "").trim().slice(0, 60) || null;
+      if (!ref || !email || !pid) return J({ error: "Missing order details." }, 400);
+      if (!rating) return J({ error: "Choose a star rating." }, 400);
+      if (text.length < 15) return J({ error: "Please write at least a sentence." }, 400);
+      // Ownership check: the order must exist, match the email, and be paid.
+      const o = await db.first("select reference, email, status, paid_at from orders where reference=?", ref);
+      if (!o || String(o.email || "").toLowerCase() !== email) return J({ error: "We couldn't find an order with that number and email." }, 404);
+      if (!o.paid_at && o.status !== "shipped") return J({ error: "You can leave a review once your order is paid." }, 403);
+      const owned = await db.first("select 1 from order_items where order_ref=? and product_id=?", ref, pid);
+      if (!owned) return J({ error: "That product isn't on this order." }, 403);
+      try {
+        await db.run("insert into reviews (order_ref, product_id, email, display_name, rating, body, status) values (?, ?, ?, ?, ?, ?, 'pending')", ref, pid, email, name, rating, text);
+      } catch (_) { return J({ error: "You've already reviewed this product for this order." }, 409); }
+      await sendEmail(env, { to: OWNER_EMAIL, subject: `New review awaiting approval — ${pid}`, html: `<div style="font-family:Arial,sans-serif;max-width:520px"><p><b>Order:</b> ${esc(ref)}</p><p><b>Product:</b> ${esc(pid)}</p><p><b>Rating:</b> ${rating}/5</p><p style="white-space:pre-wrap">${esc(text)}</p><p style="color:#666">Approve it in your owner dashboard.</p></div>` });
+      return J({ ok: true });
+    }
+
+    // ---- OWNER: review moderation ------------------------------------------
+    if (path === "/api/owner/reviews" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const status = ["pending", "approved", "rejected"].includes(qs.get("status")) ? qs.get("status") : "pending";
+      return J({ reviews: await db.all("select id, order_ref, product_id, email, display_name, rating, body, status, created_at from reviews where status=? order by created_at desc limit 100", status) });
+    }
+    if (path === "/api/owner/reviews/moderate" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const action = body.action === "approve" ? "approved" : body.action === "reject" ? "rejected" : null;
+      if (!action) return J({ error: "Unknown action." }, 400);
+      await db.run("update reviews set status=?, approved_at=case when ?='approved' then datetime('now') else null end where id=?", action, action, body.id);
+      return J({ ok: true });
+    }
+    if (path === "/api/owner/reviews" && method === "DELETE") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      await db.run("delete from reviews where id=?", qs.get("id"));
+      return J({ ok: true });
+    }
+
     // ---- PUBLIC: validate a promo code ------------------------------------
     if (path.startsWith("/api/promo/") && method === "GET") {
       const promo = await loadPromo(db, path.slice("/api/promo/".length));
@@ -330,7 +407,7 @@ export async function onRequest(context) {
         await sendEmail(env, {
           to: order.email,
           subject: `Your Luxury Peps order ${order.reference} has shipped`,
-          html: `<div style="font-family:Arial,sans-serif;max-width:520px"><h2 style="margin:0 0 6px">Your order is on the way</h2><p>Good news — order <b>${order.reference}</b> has shipped.</p>${tracking ? `<p style="background:#faf7f2;border:1px solid #e6ddcd;padding:10px 12px;border-radius:6px"><b>Tracking number:</b> ${esc(tracking)}</p>` : ""}<p>Thank you for your order.</p></div>`,
+          html: `<div style="font-family:Arial,sans-serif;max-width:520px"><h2 style="margin:0 0 6px">Your order is on the way</h2><p>Good news — order <b>${order.reference}</b> has shipped.</p>${tracking ? `<p style="background:#faf7f2;border:1px solid #e6ddcd;padding:10px 12px;border-radius:6px"><b>Tracking number:</b> ${esc(tracking)}</p>` : ""}<p>Once it arrives, we'd be glad to hear how the material and documentation held up: <a href="${new URL(request.url).origin}/?review=${encodeURIComponent(order.reference)}">leave a review</a>.</p><p style="color:#666;font-size:13px">Reviews cover product quality, purity against the certificate of analysis, packaging, and shipping — not any human use.</p><p>Thank you for your order.</p></div>`,
         });
       }
       return J({ ok: true });
