@@ -173,6 +173,10 @@ const FONTS = (
     @media (max-width: 640px) {
       .lp-catpills { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; scrollbar-width: none; }
       .lp-catpills::-webkit-scrollbar { display: none; }
+      .lp-shop-grid { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
+      .lp-shop-grid .lp-card-body { padding: 12px !important; }
+      .lp-shop-grid .lp-card-title { font-size: 15px !important; line-height: 1.25; }
+      .lp-shop-grid .lp-card-actions { flex-direction: column !important; gap: 6px !important; }
     }
     .lp-checkout-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 50px; align-items: start; }
     .lp-checkout-grid > * { min-width: 0; }
@@ -1517,9 +1521,9 @@ function ShopCard({ p, openProduct, addToCart }) {
       <div style={{ cursor: "pointer" }} onClick={learn}>
         <VialStage name={p.name} purity={p.purity} width={150} molecular={false} imageId={p.id} imageSrc={PRODUCT_IMAGES[p.id]} style={{ aspectRatio: "3 / 4" }} />
       </div>
-      <div style={{ padding: 18, display: "flex", flexDirection: "column", flex: 1 }}>
+      <div className="lp-card-body" style={{ padding: 18, display: "flex", flexDirection: "column", flex: 1 }}>
         <div className="lp-eyebrow" style={{ marginBottom: 6 }}>No. {p.no}</div>
-        <div className="lp-serif" style={{ fontSize: 19, marginBottom: 4, cursor: "pointer" }} onClick={learn}>{p.name}</div>
+        <div className="lp-serif lp-card-title" style={{ fontSize: 19, marginBottom: 4, cursor: "pointer" }} onClick={learn}>{p.name}</div>
         {SHOW_REVIEWS && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
           <StarRating value={5} size={11} />
@@ -1530,7 +1534,7 @@ function ShopCard({ p, openProduct, addToCart }) {
         <div style={{ marginBottom: 14 }}>
           <span style={{ color: "var(--gold-bright)", fontSize: 15 }}>From ${minPrice}</span>
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
+        <div className="lp-card-actions" style={{ display: "flex", gap: 8, marginTop: "auto" }}>
           <button className="lp-btn lp-btn-solid" onClick={order} disabled={sold} style={{ flex: 1, fontSize: 12, padding: "10px 8px", ...(sold ? { opacity: 0.5, cursor: "not-allowed" } : {}) }}>
             {sold
               ? "Sold Out"
@@ -1630,7 +1634,7 @@ function Shop({ setPage, openProduct, addToCart, recentlyViewed = [] }) {
           <button className="lp-btn" onClick={() => { setQuery(""); setCategory("all"); }}>Reset filters</button>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 24 }}>
+        <div className="lp-shop-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 24 }}>
           {filtered.map((p) => (
             <ShopCard key={p.id} p={p} openProduct={openProduct} addToCart={addToCart} />
           ))}
