@@ -145,6 +145,42 @@ export async function onRequest(context) {
   const body = method === "POST" ? await request.json().catch(() => ({})) : {};
 
   try {
+    // ---- PUBLIC: lightweight first-party analytics ------------------------
+    // Fire-and-forget page/product view tracking. No cookies, no third party.
+    // Stores only: event name, optional product id, coarse day, referrer host.
+    if (path === "/api/track" && method === "POST") {
+      try {
+        await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))");
+        const ev = String(body.event || "").slice(0, 40);
+        if (!ev) return J({ ok: true });
+        const pid = body.productId ? String(body.productId).slice(0, 20) : null;
+        let ref = "";
+        try { ref = body.referrer ? new URL(String(body.referrer)).hostname.slice(0, 80) : ""; } catch (_) { ref = ""; }
+        await db.run("insert into events (event, product_id, referrer) values (?, ?, ?)", ev, pid, ref);
+      } catch (_) { /* analytics must never break the site */ }
+      return J({ ok: true });
+    }
+
+    // ---- OWNER: analytics ------------------------------------------------
+    if (path === "/api/owner/analytics" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      try { await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))"); } catch (_) {}
+      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-13 days') group by day");
+      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-13 days')");
+      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-13 days') group by product_id order by views desc limit 8");
+      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-13 days') group by referrer order by hits desc limit 6");
+      const orderRow = await db.first("select count(*) as n from orders where created_at >= datetime('now','-13 days') and coalesce(archived,0)=0");
+      return J({
+        views: (totals && totals.views) || 0,
+        productViews: (totals && totals.productViews) || 0,
+        checkouts: (totals && totals.checkouts) || 0,
+        orders: (orderRow && orderRow.n) || 0,
+        series: series14(dayRows, "views"),
+        topProducts,
+        referrers,
+      });
+    }
+
     // ---- OWNER: overview -------------------------------------------------
     if (path === "/api/owner/overview" && method === "GET") {
       if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
