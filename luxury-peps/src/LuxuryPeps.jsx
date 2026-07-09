@@ -491,69 +491,36 @@ function getRecommendations(cartProductIds, limit = 4) {
 }
 
 // ---- Reviews -------------------------------------------------------------
-// Hidden until real customer reviews exist: generated reviews presented as
-// "verified buyers" are an FTC / payment-processor risk on a live store.
-// Flip to true once genuine reviews replace the seeded set below.
-const SHOW_REVIEWS = false;
-// Seeded, display-only 5-star reviews. Every entry is rated 5. Reviews focus on
-// product/service quality (purity, COA match, shipping, packaging) rather than
-// any human-use effects, consistent with research-use-only positioning.
-const REVIEW_SNIPPETS = [
-  "Purity matched the COA exactly — our own HPLC came back clean. Reordering.",
-  "Vials arrived well-sealed and cold. Packaging was discreet and intact.",
-  "Reconstituted clear with no cloudiness. Consistent lot to lot.",
-  "Certificate of analysis was easy to access and matched the batch number.",
-  "Third order from Luxury Peps now. Quality has been consistent every time.",
-  "Fast shipping and excellent handling. Everything documented properly.",
-  "Lyophilized powder was uniform and fully sealed. Exactly as described.",
-  "COA verified independently — numbers lined up. Confident in this supplier.",
-  "Great communication and quick turnaround. Labeling was clear and accurate.",
-  "Solid packaging, cold-chain held up in transit. No complaints at all.",
-  "Batch documentation was thorough. Easy to log for our records.",
-  "Clean material, accurate labeling, on-time delivery. Will buy again.",
-  "Reorder was seamless and arrived faster than the first. Reliable vendor.",
-  "Tamper-evident seals intact, lot number legible. Documentation on point.",
-  "Mass spec confirmed identity in our lab. Matches the certificate.",
-  "Discreet packaging, padded well — zero breakage across the whole order.",
-  "Purity figures were exactly as listed. No surprises, clean material.",
-  "Support answered our COA request within the hour. Genuinely impressed.",
-  "Consistent fill weights across vials. Good quality control throughout.",
-  "Tracking was accurate end to end and the cold pack was still frozen.",
-  "Caps crimped tight, no leaks. Stored fine at -20C as labeled.",
-  "Ordered for the lab — invoicing and paperwork were clean and professional.",
-  "Powder dissolved fully, solution stayed clear. Lot consistency is there.",
-  "Batch matched its certificate to the decimal. Sourcing here again.",
-];
-const REVIEWER_NAMES = [
-  "Dr. M. Avery", "J. Park", "K. Whitfield", "R. Solano", "A. Brenner",
-  "Lab Procurement — Austin", "T. Nakamura", "D. Okafor", "S. Lindqvist",
-  "C. Mendez", "Research Group — Denver", "P. Halloran",
-  "N. Castellano", "Biotech Sourcing — Reno", "E. Vasquez", "L. Friedman",
-  "Dr. H. Tan", "W. Okonkwo", "Procurement — Tampa", "S. Marchetti",
-  "G. Ivanov", "Dr. P. Acharya", "M. Delgado", "Research Lab — Columbus",
-];
+// Reviews are real, verified-purchase reviews only: a review can only be
+// submitted against an order that exists, is paid, matches the buyer's email,
+// and actually contained that product. Every review is held for owner approval
+// before it appears. Reviews cover product and service quality (purity vs COA,
+// documentation, packaging, shipping) — never human-use effects, consistent
+// with research-use-only positioning.
+//
+// There is deliberately no seeded/generated review data here. Fabricated
+// reviews presented as real buyers violate the FTC's rule on fake reviews and
+// put payment processing at risk.
 
-// Deterministic per-product reviews so the set is stable across renders.
-function getReviews(productId) {
-  const idx = PRODUCTS.findIndex((p) => p.id === productId);
-  const base = idx < 0 ? 0 : idx;
-  const count = 4 + (base % 3); // 4, 5, or 6 reviews per product
-  const daysAgo = [5, 11, 19, 28, 41, 57];
-  const reviews = [];
-  for (let i = 0; i < count; i++) {
-    const s = (base * 3 + i * 5) % REVIEW_SNIPPETS.length;
-    const n = (base * 2 + i * 7) % REVIEWER_NAMES.length;
-    const d = new Date(2026, 5, 21);
-    d.setDate(d.getDate() - daysAgo[i]);
-    reviews.push({
-      name: REVIEWER_NAMES[n],
-      text: REVIEW_SNIPPETS[s],
-      verified: (base + i) % 4 !== 0, // ~75% verified buyers
-      date: d.toISOString().slice(0, 10),
-      stars: 5,
-    });
-  }
-  return reviews;
+// Fetches approved reviews for one product.
+async function fetchProductReviews(productId) {
+  if (!BACKEND_LIVE) return { reviews: [], count: 0, average: 0 };
+  try {
+    const r = await fetch(API_BASE + "/api/reviews/" + encodeURIComponent(productId));
+    if (!r.ok) return { reviews: [], count: 0, average: 0 };
+    return await r.json();
+  } catch (_) { return { reviews: [], count: 0, average: 0 }; }
+}
+
+// Ratings for the whole catalog in a single request (used by shop cards).
+async function fetchReviewSummary() {
+  if (!BACKEND_LIVE) return {};
+  try {
+    const r = await fetch(API_BASE + "/api/reviews-summary");
+    if (!r.ok) return {};
+    const d = await r.json();
+    return d.summary || {};
+  } catch (_) { return {}; }
 }
 
 const COA_DATA = {
@@ -1139,6 +1106,7 @@ function Footer({ setPage }) {
               <button className="lp-nav-link" onClick={() => setPage("shipping")} style={{ textAlign: "left" }}>Shipping &amp; Refunds</button>
               <button className="lp-nav-link" onClick={() => setPage("guide")} style={{ textAlign: "left" }}>Research Guide</button>
               <button className="lp-nav-link" onClick={() => setPage("status")} style={{ textAlign: "left" }}>Track Order</button>
+              <button className="lp-nav-link" onClick={() => setPage("review")} style={{ textAlign: "left" }}>Write a Review</button>
               <button className="lp-nav-link" onClick={() => setPage("account")} style={{ textAlign: "left" }}>My Account</button>
               <button className="lp-nav-link" onClick={() => setPage("faq")} style={{ textAlign: "left" }}>FAQ</button>
               <button className="lp-nav-link" onClick={() => setPage("orders")} style={{ textAlign: "left" }}>My Orders</button>
@@ -1487,7 +1455,7 @@ function ApparelPage({ setPage, addToCart }) {
   );
 }
 
-function ShopCard({ p, openProduct, addToCart }) {
+function ShopCard({ p, openProduct, addToCart, rating }) {
   const [added, setAdded] = useState(false);
   const minPrice = Math.min(...p.variants.map((v) => v.price));
   const pre = isPreorder(p);
@@ -1529,10 +1497,10 @@ function ShopCard({ p, openProduct, addToCart }) {
       <div className="lp-card-body" style={{ padding: 18, display: "flex", flexDirection: "column", flex: 1 }}>
         <div className="lp-eyebrow" style={{ marginBottom: 6 }}>No. {p.no}</div>
         <div className="lp-serif lp-card-title" style={{ fontSize: 19, marginBottom: 4, cursor: "pointer" }} onClick={learn}>{p.name}</div>
-        {SHOW_REVIEWS && (
+        {rating && rating.count > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
-          <StarRating value={5} size={11} />
-          <span style={{ fontSize: 11, color: "var(--muted)" }}>({getReviews(p.id).length})</span>
+          <StarRating value={Math.round(rating.average)} size={11} />
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>{rating.average.toFixed(1)} ({rating.count})</span>
         </div>
         )}
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>{p.variants.length > 1 ? `${p.variants.length} sizes` : p.variants[0].size.replace(/ \/ (vial|bottle)/, "")} · {p.purity}</div>
@@ -1555,6 +1523,8 @@ function ShopCard({ p, openProduct, addToCart }) {
 }
 
 function Shop({ setPage, openProduct, addToCart, recentlyViewed = [] }) {
+  const [ratings, setRatings] = useState({});
+  useEffect(() => { let alive = true; (async () => { const s = await fetchReviewSummary(); if (alive) setRatings(s); })(); return () => { alive = false; }; }, []);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("featured");
@@ -1641,7 +1611,7 @@ function Shop({ setPage, openProduct, addToCart, recentlyViewed = [] }) {
       ) : (
         <div className="lp-shop-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 24 }}>
           {filtered.map((p) => (
-            <ShopCard key={p.id} p={p} openProduct={openProduct} addToCart={addToCart} />
+            <ShopCard key={p.id} p={p} openProduct={openProduct} addToCart={addToCart} rating={ratings[p.id]} />
           ))}
         </div>
       )}
@@ -1707,6 +1677,12 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
   const [variantId, setVariantId] = useState(p ? p.variants[0].id : null);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+  const [reviewData, setReviewData] = useState({ reviews: [], count: 0, average: 0 });
+  useEffect(() => {
+    let alive = true;
+    (async () => { const d = await fetchProductReviews(productId); if (alive) setReviewData(d); })();
+    return () => { alive = false; };
+  }, [productId]);
   if (!p) return null;
   const variant = p.variants.find((v) => v.id === variantId) || p.variants[0];
 
@@ -1720,13 +1696,13 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
         <div>
           <div className="lp-eyebrow" style={{ marginBottom: 10 }}>No. {p.no} · Batch {variant.batch}</div>
           <h2 className="lp-serif" style={{ fontSize: 44, fontWeight: 400, marginBottom: 12 }}>{p.name}</h2>
-          {SHOW_REVIEWS && (
+          {reviewData.count > 0 && (
           <button
             onClick={() => { const el = document.getElementById("lp-reviews"); if (el) el.scrollIntoView({ behavior: "smooth" }); }}
             style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", marginBottom: 18 }}
           >
-            <StarRating value={5} size={14} />
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>5.0 · {getReviews(p.id).length} reviews</span>
+            <StarRating value={Math.round(reviewData.average)} size={14} />
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>{reviewData.average.toFixed(1)} · {reviewData.count} review{reviewData.count === 1 ? "" : "s"}</span>
           </button>
           )}
           <p style={{ color: "var(--gold-bright)", fontSize: 22, marginBottom: 24, display: "flex", alignItems: "baseline", gap: 10 }}>
@@ -1823,40 +1799,49 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
         </div>
       </div>
 
-      {SHOW_REVIEWS && (
       <div id="lp-reviews" style={{ marginTop: 72, scrollMarginTop: 90 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 6, flexWrap: "wrap" }}>
           <h3 className="lp-serif" style={{ fontSize: 28 }}>Reviews</h3>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <StarRating value={5} size={14} />
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>5.0 out of 5 · {getReviews(p.id).length} reviews</span>
-          </div>
+          {reviewData.count > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <StarRating value={Math.round(reviewData.average)} size={14} />
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>{reviewData.average.toFixed(1)} out of 5 · {reviewData.count} review{reviewData.count === 1 ? "" : "s"}</span>
+            </div>
+          )}
         </div>
-        <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 28 }}>
-          Verified-buyer reviews reflect product quality, documentation, and fulfilment for this compound.
+        <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 24, lineHeight: 1.7 }}>
+          Reviews come only from verified purchases of this compound, and cover product quality,
+          purity against the certificate of analysis, documentation, packaging, and shipping.
         </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 18 }}>
-          {getReviews(p.id).map((r, i) => (
-            <div key={i} style={{ border: "1px solid var(--line)", padding: "20px 22px", background: "var(--panel)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <StarRating value={r.stars} size={13} />
-                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.date}</span>
-              </div>
-              <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--cream)", marginBottom: 16 }}>{r.text}</p>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 13, color: "var(--cream)" }}>{r.name}</span>
-                {r.verified && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--gold)", border: "1px solid var(--line)", padding: "2px 8px" }}>
-                    <ShieldCheck size={11} /> Verified Buyer
-                  </span>
-                )}
-              </div>
+        {reviewData.count === 0 ? (
+          <div style={{ border: "1px solid var(--line)", padding: "28px 22px", textAlign: "center" }}>
+            <p style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: 16 }}>No reviews yet for this compound.</p>
+            <button className="lp-btn" onClick={() => setPage("review")}>Reviewed an order? Write one</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 18 }}>
+              {reviewData.reviews.map((r) => (
+                <div key={r.id} style={{ border: "1px solid var(--line)", padding: "20px 22px", background: "var(--panel)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <StarRating value={r.rating} size={13} />
+                    <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{String(r.created_at || "").slice(0, 10)}</span>
+                  </div>
+                  <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--cream)", marginBottom: 16 }}>{r.body}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 13, color: "var(--cream)" }}>{r.display_name || "Verified buyer"}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, letterSpacing: "0.04em", color: "var(--gold-bright)" }}>
+                      <ShieldCheck size={11} /> Verified Buyer
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <button className="lp-btn" onClick={() => setPage("review")} style={{ marginTop: 20 }}>Write a review</button>
+          </>
+        )}
       </div>
-      )}
 
       <RecentlyViewed ids={recentlyViewed} openProduct={openProduct} exclude={p.id} />
     </div>
@@ -1877,7 +1862,7 @@ function ComparePage({ setPage, openProduct }) {
     { label: "Purity (HPLC)", get: (p) => p.purity },
     { label: "Sizes", get: (p) => p.variants.map((v) => v.size.replace(/ \/ (vial|bottle)/, "")).join(", ") },
     { label: "From", get: (p) => `$${minPrice(p)}` },
-    { label: "Rating", get: (p) => `★ 5.0 (${getReviews(p.id).length})` },
+
   ];
 
   return (
@@ -4131,6 +4116,7 @@ function OwnerPortal({ setPage }) {
   const [promos, setPromos] = useState([]);
   const [promoForm, setPromoForm] = useState({ code: "", kind: "pct", value: "", expiresAt: "", maxUses: "" });
   const [promoMsg, setPromoMsg] = useState("");
+  const [pendingReviews, setPendingReviews] = useState([]);
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -4288,6 +4274,16 @@ function OwnerPortal({ setPage }) {
 
   const signOut = () => { setAuthed(false); setPin(""); setData(null); setError(""); setSampleMode(false); try { window.storage.delete("owner:auth", false); } catch (_) { /* ignore */ } };
 
+  const loadReviews = async (p) => {
+    if (!live) return;
+    try { const r = await fetch(API_BASE + "/api/owner/reviews?status=pending&pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setPendingReviews(d.reviews || []); } } catch (_) { /* ignore */ }
+  };
+  const moderateReview = async (id, action) => {
+    try {
+      await fetch(API_BASE + "/api/owner/reviews/moderate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, id, action }) });
+      loadReviews(pin);
+    } catch (_) { /* ignore */ }
+  };
   const loadPromos = async (p) => {
     if (!live) return;
     try { const r = await fetch(API_BASE + "/api/owner/promos?pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setPromos(d.promos || []); } } catch (_) { /* ignore */ }
@@ -4332,8 +4328,9 @@ function OwnerPortal({ setPage }) {
     loadInbox(pin);
     loadStats(pin);
     loadPromos(pin);
+    loadReviews(pin);
   };
-  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); } }, [authed]);
+  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); loadReviews(pin); } }, [authed]);
 
   const markPaid = async (orderId) => {
     if (live) {
@@ -4650,6 +4647,37 @@ function OwnerPortal({ setPage }) {
           </div>
         );
       })()}
+
+      {/* Reviews awaiting approval */}
+      {live && pendingReviews.length > 0 && (
+        <div style={{ border: "1px solid var(--gold)", padding: "18px 20px", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+            <Star size={14} color="var(--gold-bright)" />
+            <div className="lp-eyebrow">Reviews awaiting approval ({pendingReviews.length})</div>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+            Nothing publishes until you approve it. Reject anything describing human use.
+          </p>
+          {pendingReviews.map((r, i) => {
+            const prod = PRODUCTS.find((x) => x.id === r.product_id);
+            return (
+              <div key={r.id} style={{ padding: "12px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, color: "var(--cream)" }}>{prod ? prod.name : r.product_id} <span style={{ color: "var(--muted)", fontSize: 11 }}>· {r.order_ref}</span></span>
+                  <StarRating value={r.rating} size={12} />
+                </div>
+                <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.65, marginBottom: 10 }}>{r.body}</p>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.display_name || "(no name)"} · {r.email}</span>
+                  <span style={{ flex: 1 }} />
+                  <button className="lp-btn lp-btn-solid" onClick={() => moderateReview(r.id, "approve")} style={{ fontSize: 11, padding: "5px 12px" }}>Approve</button>
+                  <button className="lp-btn" onClick={() => moderateReview(r.id, "reject")} style={{ fontSize: 11, padding: "5px 12px" }}>Reject</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Promo codes */}
       {live && (
@@ -5502,6 +5530,151 @@ function AccountPage({ setPage, addToCart, userEmail }) {
   );
 }
 
+// ── Write a review (verified purchase only) ────────────────────────────────
+function WriteReviewPage({ setPage }) {
+  const [ref, setRef] = useState("");
+  const [email, setEmail] = useState("");
+  const [eligible, setEligible] = useState(null); // null | [] | [{product_id,name}]
+  const [productId, setProductId] = useState("");
+  const [rating, setRating] = useState(0);
+  const [body, setBody] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // A shipped-order email links here with ?review=LP-XXXX prefilled.
+  useEffect(() => {
+    try {
+      const r = new URLSearchParams(window.location.search).get("review");
+      if (r) setRef(r.trim().toUpperCase());
+    } catch (_) { /* no-op */ }
+  }, []);
+
+  const check = async () => {
+    setError(""); setEligible(null);
+    if (!ref.trim() || !email.trim()) { setError("Enter your order number and the email you used."); return; }
+    if (!BACKEND_LIVE) { setError("Reviews open once the site is live."); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(API_BASE + "/api/review/eligible?ref=" + encodeURIComponent(ref.trim()) + "&email=" + encodeURIComponent(email.trim()));
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(d.error || "We couldn't find that order."); setLoading(false); return; }
+      setEligible(d.products || []);
+      if ((d.products || []).length === 1) setProductId(d.products[0].product_id);
+    } catch (_) { setError("Couldn't reach the server. Try again shortly."); }
+    setLoading(false);
+  };
+
+  const submit = async () => {
+    setError("");
+    if (!productId) { setError("Choose which compound you're reviewing."); return; }
+    if (!rating) { setError("Choose a star rating."); return; }
+    if (body.trim().length < 15) { setError("Please write at least a sentence."); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(API_BASE + "/api/review/submit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: ref.trim(), email: email.trim(), productId, rating, body, displayName }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(d.error || "Couldn't submit that review."); setLoading(false); return; }
+      setDone(true);
+    } catch (_) { setError("Couldn't reach the server. Try again shortly."); }
+    setLoading(false);
+  };
+
+  if (done) {
+    return (
+      <div className="lp-fade" style={{ maxWidth: 600, margin: "0 auto", padding: "110px 28px", textAlign: "center" }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", border: "1px solid var(--gold)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
+          <Check size={22} color="var(--gold-bright)" />
+        </div>
+        <h2 className="lp-serif" style={{ fontSize: 30, marginBottom: 12 }}>Thank you</h2>
+        <p style={{ color: "var(--muted)", fontSize: 13.5, lineHeight: 1.7, marginBottom: 28 }}>
+          Your review has been submitted and will appear once it's been reviewed. We read every one.
+        </p>
+        <button className="lp-btn lp-btn-solid" onClick={() => setPage("shop")}>Back to the catalog</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lp-fade" style={{ maxWidth: 640, margin: "0 auto", padding: "64px 28px 100px" }}>
+      <button className="lp-nav-link" onClick={() => setPage("home")} style={{ marginBottom: 24, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <ChevronLeft size={14} /> Home
+      </button>
+      <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Verified reviews</div>
+      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 12 }}>Write a review</h1>
+      <p style={{ color: "var(--muted)", fontSize: 13.5, lineHeight: 1.7, marginBottom: 20 }}>
+        Reviews can only be left against a paid order, so every review published is a verified purchase.
+      </p>
+
+      <div style={{ border: "1px solid var(--gold)", background: "linear-gradient(135deg, rgba(176,130,67,0.12), transparent 72%)", padding: "14px 16px", marginBottom: 28, display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <AlertCircle size={16} color="var(--gold-bright)" style={{ flexShrink: 0, marginTop: 2 }} />
+        <p style={{ fontSize: 12.5, color: "var(--cream)", lineHeight: 1.6, margin: 0 }}>
+          Please review <strong>product and service quality only</strong> — purity against the certificate of
+          analysis, documentation, packaging, cold-chain condition, and shipping. All compounds are supplied
+          for laboratory research only, so reviews describing human or veterinary use can't be published.
+        </p>
+      </div>
+
+      {eligible === null ? (
+        <div style={{ display: "grid", gap: 12 }}>
+          <input type="text" placeholder="Order number (e.g. LP-XXXXXX)" value={ref} onChange={(e) => setRef(e.target.value)} style={{ fontSize: 14 }} />
+          <input type="email" placeholder="Email used at checkout" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") check(); }} style={{ fontSize: 14 }} />
+          <button className="lp-btn lp-btn-solid" onClick={check} disabled={loading}>{loading ? "Checking…" : "Continue"}</button>
+        </div>
+      ) : eligible.length === 0 ? (
+        <div style={{ border: "1px solid var(--line)", padding: "26px 22px", textAlign: "center" }}>
+          <p style={{ color: "var(--muted)", fontSize: 13.5 }}>You've already reviewed everything on this order. Thank you.</p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          <div>
+            <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>Which compound?</label>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} style={{ width: "100%", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", padding: "10px", fontSize: 14 }}>
+              <option value="">Choose…</option>
+              {eligible.map((it) => <option key={it.product_id} value={it.product_id}>{it.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>Rating</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setRating(n)} aria-label={`${n} star${n === 1 ? "" : "s"}`} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>
+                  <Star size={26} fill={n <= rating ? "#C9A05C" : "none"} color={n <= rating ? "#C9A05C" : "var(--line)"} strokeWidth={1.5} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>Your review</label>
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} maxLength={1200}
+              placeholder="How did the material and documentation hold up? Purity vs the COA, packaging, condition on arrival, shipping speed…"
+              style={{ width: "100%", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", padding: "10px", fontSize: 14, fontFamily: "inherit", resize: "vertical" }} />
+            <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "right" }}>{body.length}/1200</div>
+          </div>
+
+          <div>
+            <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>Display name (optional)</label>
+            <input type="text" placeholder="Shown publicly — e.g. initials or lab name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} style={{ fontSize: 14 }} />
+          </div>
+
+          {error && <p style={{ fontSize: 13, color: "#c98a6c" }}>{error}</p>}
+          <button className="lp-btn lp-btn-solid" onClick={submit} disabled={loading}>{loading ? "Submitting…" : "Submit review"}</button>
+          <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.6 }}>
+            Your email is used only to verify the purchase and is never published.
+          </p>
+        </div>
+      )}
+      {eligible === null && error && <p style={{ fontSize: 13, color: "#c98a6c", marginTop: 14 }}>{error}</p>}
+    </div>
+  );
+}
+
 // ── Public order status lookup (order number + email) ──────────────────────
 function OrderStatusPage({ setPage }) {
   const [ref, setRef] = useState("");
@@ -5968,6 +6141,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "orders" && <Orders setPage={setPage} />}
       {page === "account" && <AccountPage setPage={setPage} addToCart={addToCart} userEmail={userEmail} />}
       {page === "status" && <OrderStatusPage setPage={setPage} />}
+      {page === "review" && <WriteReviewPage setPage={setPage} />}
       {page === "guide" && <ResearchGuide setPage={setPage} />}
       {page === "about" && <About setPage={setPage} />}
       {page === "calculator" && <Calculator setPage={setPage} />}
@@ -5981,7 +6155,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "owner" && <OwnerPortal setPage={setPage} />}
       {page === "batch" && <BatchLookup setPage={setPage} openProduct={openProduct} />}
       {page === "compare" && <ComparePage setPage={setPage} openProduct={openProduct} />}
-      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare","account","status","guide" ].includes(page) && (
+      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare","account","status","guide","review" ].includes(page) && (
         <div className="lp-fade" style={{ maxWidth: 600, margin: "0 auto", padding: "100px 28px", textAlign: "center" }}>
           <div className="lp-eyebrow" style={{ marginBottom: 12 }}>404</div>
           <h2 className="lp-serif" style={{ fontSize: 30, marginBottom: 14 }}>Page not found</h2>
