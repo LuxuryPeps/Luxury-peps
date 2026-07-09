@@ -33,7 +33,7 @@ const J = (obj, status = 200) => new Response(JSON.stringify(obj), {
   },
 });
 
-function priceOrder(items, ambassadorPct) {
+function priceOrder(items, ambassadorPct, promo) {
   let subtotal = 0;
   const lines = [];
   for (const it of items || []) {
@@ -45,11 +45,35 @@ function priceOrder(items, ambassadorPct) {
     lines.push({ variantId: it.variantId, productId: String(it.variantId).split("-")[0], name: v.name, qty, unitCents: v.cents, lineCents: line });
   }
   const pct = ambassadorPct || 0;
-  const discount = pct ? Math.round(subtotal * pct) : 0;
-  const afterDiscount = subtotal - discount;
-  const shipping = subtotal > 0 && afterDiscount < FREE_SHIP ? FLAT_SHIP : 0;
-  return { lines, subtotal, discount, shipping, total: afterDiscount + shipping, commission: discount };
+  const discount = pct ? Math.round(subtotal * pct) : 0;   // ambassador discount == commission
+  const afterAmb = Math.max(0, subtotal - discount);
+  // Promo stacks on top of any ambassador discount, applied to the remainder.
+  let promoDiscount = 0;
+  if (promo && afterAmb > 0) {
+    if (promo.kind === "amount") promoDiscount = Math.min(Math.max(0, promo.value), afterAmb);
+    else if (promo.kind === "pct") promoDiscount = Math.round(afterAmb * (Math.min(100, Math.max(0, promo.value)) / 100));
+  }
+  const afterDiscount = Math.max(0, afterAmb - promoDiscount);
+  const freeShip = !!promo && promo.kind === "freeship";
+  // Threshold is measured on the SUBTOTAL, matching the advertised copy
+  // ("free shipping on orders over $150") and the cart progress bar. Basing it
+  // on the post-discount figure silently charged shipping the customer never saw.
+  const shipping = subtotal > 0 && !freeShip && subtotal < FREE_SHIP ? FLAT_SHIP : 0;
+  return { lines, subtotal, discount, promoDiscount, shipping, total: afterDiscount + shipping, commission: discount };
 }
+
+// Validate a promo code server-side. Never trust the browser's copy.
+async function loadPromo(db, rawCode) {
+  const code = upper(String(rawCode || "").trim());
+  if (!code) return null;
+  let r = null;
+  try { r = await db.first("select code, kind, value, active, expires_at, max_uses, uses from promos where code=?", code); } catch (_) { return null; }
+  if (!r || !r.active) return null;
+  if (r.expires_at && new Date(r.expires_at + "T23:59:59Z").getTime() < Date.now()) return null;
+  if (r.max_uses != null && (r.uses || 0) >= r.max_uses) return null;
+  return { code: r.code, kind: r.kind || "pct", value: r.value || 0 };
+}
+const promoLabel = (p) => !p ? "" : p.kind === "pct" ? `${p.value}% off` : p.kind === "amount" ? `$${(p.value / 100).toFixed(2)} off` : "Free shipping";
 
 function newReference() {
   const a = Date.now().toString(36).toUpperCase();
@@ -67,6 +91,21 @@ async function hmac(secret, msg) {
   return b64url(new Uint8Array(await crypto.subtle.sign("HMAC", k, TE.encode(msg))));
 }
 const signToken = async (secret, email) => b64url(TE.encode(email)) + "." + (await hmac(secret, email));
+function b64urlDec(str) { let x = String(str || "").replace(/-/g, "+").replace(/_/g, "/"); while (x.length % 4) x += "="; return b64dec(x); }
+// Returns the email if the token's signature checks out, else null.
+async function verifyToken(secret, token) {
+  const t = String(token || "");
+  const parts = t.split(".");
+  if (parts.length !== 2) return null;
+  let email;
+  try { email = new TextDecoder().decode(b64urlDec(parts[0])); } catch (_) { return null; }
+  if (!email) return null;
+  const expect = await signToken(secret, email);
+  if (expect.length !== t.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expect.length; i++) diff |= expect.charCodeAt(i) ^ t.charCodeAt(i);
+  return diff === 0 ? email : null;
+}
 async function pbkdf2(pw, saltBytes) {
   const k = await crypto.subtle.importKey("raw", TE.encode(pw), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: saltBytes, iterations: 100000, hash: "SHA-256" }, k, 256);
@@ -124,6 +163,18 @@ function series14(rows, field) {
   return out;
 }
 
+// Self-healing schema: adds anything new without a manual D1 migration step.
+// Every statement is idempotent and failures are swallowed (column exists).
+async function ensureSchema(db) {
+  const t = async (q) => { try { await db.run(q); } catch (_) { /* already present */ } };
+  await t("alter table orders add column promo_code text");
+  await t("alter table orders add column promo_discount_cents integer not null default 0");
+  await t("alter table orders add column tracking text");
+  await t("alter table orders add column shipped_at text");
+  await t("create table if not exists promos (code text primary key, kind text not null default 'pct', value integer not null default 0, active integer not null default 1, expires_at text, max_uses integer, uses integer not null default 0, created_at text not null default (datetime('now')))");
+  await t("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))");
+}
+
 // ── Router ─────────────────────────────────────────────────────────────────
 export async function onRequest(context) {
   const { request, env } = context;
@@ -131,6 +182,7 @@ export async function onRequest(context) {
   if (!env.DB) return J({ error: "Database not bound. Add a D1 binding named DB." }, 500);
 
   const db = makeDB(env);
+  await ensureSchema(db);
   const OWNER_PIN = env.OWNER_PIN || "";
   const APP_SECRET = env.APP_SECRET || "change-me";
   const PREORDER = (env.PREORDER || "true").toLowerCase() !== "false";
@@ -145,6 +197,70 @@ export async function onRequest(context) {
   const body = method === "POST" ? await request.json().catch(() => ({})) : {};
 
   try {
+    // ---- PUBLIC: validate a promo code ------------------------------------
+    if (path.startsWith("/api/promo/") && method === "GET") {
+      const promo = await loadPromo(db, path.slice("/api/promo/".length));
+      if (!promo) return J({ valid: false });
+      return J({ valid: true, code: promo.code, kind: promo.kind, value: promo.value, label: promoLabel(promo) });
+    }
+
+    // ---- PUBLIC: order status lookup (order number + email must match) -----
+    if (path === "/api/order-status" && method === "GET") {
+      const ref = upper(String(qs.get("ref") || "").trim());
+      const email = String(qs.get("email") || "").toLowerCase().trim();
+      if (!ref || !email) return J({ error: "Enter your order number and email." }, 400);
+      const o = await db.first("select reference, email, status, method, total_cents, tracking, created_at, paid_at, shipped_at, coalesce(archived,0) as archived from orders where reference=?", ref);
+      // Same message either way, so this can't be used to discover which orders exist.
+      if (!o || String(o.email || "").toLowerCase() !== email) return J({ error: "We couldn't find an order with that number and email." }, 404);
+      const items = await db.all("select name, qty, line_cents from order_items where order_ref=?", ref);
+      return J({ reference: o.reference, status: o.archived ? "cancelled" : o.status, method: o.method, total_cents: o.total_cents, tracking: o.tracking || null, created_at: o.created_at, paid_at: o.paid_at, shipped_at: o.shipped_at, items });
+    }
+
+    // ---- ACCOUNT: signed-in order history (for reorder) --------------------
+    if (path === "/api/account/orders" && method === "GET") {
+      const auth = request.headers.get("Authorization") || "";
+      const email = await verifyToken(APP_SECRET, auth.replace(/^Bearer\s+/i, ""));
+      if (!email) return J({ error: "unauthorized" }, 401);
+      const rows = await db.all("select reference, status, method, total_cents, tracking, created_at, shipped_at from orders where lower(email)=? and coalesce(archived,0)=0 order by created_at desc limit 50", email);
+      const out = [];
+      for (const r of rows) {
+        const items = await db.all("select variant_id, product_id, name, qty, line_cents from order_items where order_ref=?", r.reference);
+        out.push({ ...r, items });
+      }
+      return J({ email, orders: out });
+    }
+
+    // ---- OWNER: promo codes ------------------------------------------------
+    if (path === "/api/owner/promos" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      return J({ promos: await db.all("select code, kind, value, active, expires_at, max_uses, uses, created_at from promos order by created_at desc") });
+    }
+    if (path === "/api/owner/promos" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(String(body.code || "").trim());
+      if (!/^[A-Z0-9]{3,20}$/.test(code)) return J({ error: "Code must be 3–20 letters or numbers." }, 400);
+      const kind = ["pct", "amount", "freeship"].includes(body.kind) ? body.kind : "pct";
+      let value = Math.max(0, Math.floor(Number(body.value) || 0));
+      if (kind === "pct" && (value < 1 || value > 100)) return J({ error: "Percent must be between 1 and 100." }, 400);
+      if (kind === "amount" && value < 1) return J({ error: "Enter an amount in cents." }, 400);
+      if (kind === "freeship") value = 0;
+      if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an ambassador code." }, 409);
+      const maxUses = body.maxUses ? Math.max(1, Math.floor(Number(body.maxUses))) : null;
+      const expires = body.expiresAt ? String(body.expiresAt).slice(0, 10) : null;
+      await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, ?, ?, 1, ?, ?) on conflict(code) do update set kind=excluded.kind, value=excluded.value, expires_at=excluded.expires_at, max_uses=excluded.max_uses, active=1", code, kind, value, expires, maxUses);
+      return J({ ok: true });
+    }
+    if (path === "/api/owner/promos/toggle" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      await db.run("update promos set active = case when active=1 then 0 else 1 end where code=?", upper(String(body.code || "")));
+      return J({ ok: true });
+    }
+    if (path === "/api/owner/promos" && method === "DELETE") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      await db.run("delete from promos where code=?", upper(String(qs.get("code") || "")));
+      return J({ ok: true });
+    }
+
     // ---- PUBLIC: lightweight first-party analytics ------------------------
     // Fire-and-forget page/product view tracking. No cookies, no third party.
     // Stores only: event name, optional product id, coarse day, referrer host.
@@ -207,7 +323,7 @@ export async function onRequest(context) {
     }
     if (path === "/api/owner/mark-shipped" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
-      await db.run("update orders set status='shipped' where reference=? and paid_at is not null", body.orderId);
+      await db.run("update orders set status='shipped', shipped_at=coalesce(shipped_at, datetime('now')), tracking=coalesce(nullif(?,''), tracking) where reference=? and paid_at is not null", String(body.tracking || "").trim(), body.orderId);
       const order = await db.first("select reference, email from orders where reference=?", body.orderId);
       if (order && order.email) {
         const tracking = String(body.tracking || "").trim();
@@ -345,10 +461,12 @@ export async function onRequest(context) {
       const code = body.code ? upper(body.code) : null;
       let pct = 0;
       if (code) { const a = await db.first("select pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; }
-      const p = priceOrder(body.items, pct);
+      const promo = await loadPromo(db, body.promo);
+      const p = priceOrder(body.items, pct, promo);
       if (!p.lines.length) return J({ error: "No valid items." }, 400);
       const reference = newReference();
-      await db.run("insert into orders (reference, email, method, code, status, subtotal_cents, discount_cents, shipping_cents, total_cents, commission_cents, customer, certified) values (?, ?, 'card', ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?)", reference, body.email || null, code, p.subtotal, p.discount, p.shipping, p.total, p.commission, JSON.stringify(body.customer || {}), body.certifiedResearchUse ? 1 : 0);
+      await db.run("insert into orders (reference, email, method, code, status, subtotal_cents, discount_cents, shipping_cents, total_cents, commission_cents, customer, certified, promo_code, promo_discount_cents) values (?, ?, 'card', ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?)", reference, body.email || null, code, p.subtotal, p.discount, p.shipping, p.total, p.commission, JSON.stringify(body.customer || {}), body.certifiedResearchUse ? 1 : 0, promo ? promo.code : null, p.promoDiscount);
+      if (promo) { try { await db.run("update promos set uses = uses + 1 where code=?", promo.code); } catch (_) {} }
       for (const l of p.lines) {
         await db.run("insert into order_items (order_ref, variant_id, product_id, name, qty, unit_price_cents, line_cents) values (?, ?, ?, ?, ?, ?, ?)", reference, l.variantId, l.productId, l.name, l.qty, l.unitCents, l.lineCents);
       }
@@ -420,9 +538,11 @@ export async function onRequest(context) {
       const code = body.code ? upper(body.code) : null;
       let pct = 0;
       if (code) { const a = await db.first("select pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; }
-      const p = priceOrder(body.items, pct);
+      const promo = await loadPromo(db, body.promo);
+      const p = priceOrder(body.items, pct, promo);
       if (!p.lines.length) return J({ error: "No valid items." }, 400);
       const reference = newReference();
+      if (promo) { try { await db.run("update promos set uses = uses + 1 where code=?", promo.code); } catch (_) {} }
       await db.run(
         "insert into orders (reference, email, method, code, status, subtotal_cents, discount_cents, shipping_cents, total_cents, commission_cents, customer, certified) values (?, ?, ?, ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?)",
         reference, body.email || null, body.method || null, code, p.subtotal, p.discount, p.shipping, p.total, p.commission, JSON.stringify(body.customer || {}), body.certifiedResearchUse ? 1 : 0
