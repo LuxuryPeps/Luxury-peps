@@ -694,6 +694,14 @@ const BACKEND_LIVE = !!SITE_CONFIG.apiBaseUrl || !!SITE_CONFIG.backendLive;
 // First-party analytics. Fire-and-forget: never awaited, never blocks the UI,
 // and silently does nothing when the backend is off (offline preview builds).
 // No cookies and no third-party scripts, so no consent banner is required.
+// Reads the signed session token saved at sign-in (used for account endpoints).
+async function getAuthToken() {
+  try {
+    const s = await window.storage.get("session", false);
+    return s && s.value ? (JSON.parse(s.value).token || null) : null;
+  } catch (_) { return null; }
+}
+
 function track(event, productId) {
   if (!BACKEND_LIVE || typeof window === "undefined") return;
   try {
@@ -1129,6 +1137,9 @@ function Footer({ setPage }) {
               <button className="lp-nav-link" onClick={() => setPage("terms")} style={{ textAlign: "left" }}>Terms of Service</button>
               <button className="lp-nav-link" onClick={() => setPage("privacy")} style={{ textAlign: "left" }}>Privacy Policy</button>
               <button className="lp-nav-link" onClick={() => setPage("shipping")} style={{ textAlign: "left" }}>Shipping &amp; Refunds</button>
+              <button className="lp-nav-link" onClick={() => setPage("guide")} style={{ textAlign: "left" }}>Research Guide</button>
+              <button className="lp-nav-link" onClick={() => setPage("status")} style={{ textAlign: "left" }}>Track Order</button>
+              <button className="lp-nav-link" onClick={() => setPage("account")} style={{ textAlign: "left" }}>My Account</button>
               <button className="lp-nav-link" onClick={() => setPage("faq")} style={{ textAlign: "left" }}>FAQ</button>
               <button className="lp-nav-link" onClick={() => setPage("orders")} style={{ textAlign: "left" }}>My Orders</button>
               <button className="lp-nav-link" onClick={() => setPage("batch")} style={{ textAlign: "left" }}>Batch Lookup</button>
@@ -2328,6 +2339,7 @@ function Checkout({ cart, setPage, addToCart }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [codeInput, setCodeInput] = useState("");
   const [appliedCode, setAppliedCode] = useState(null);
+  const [appliedPromo, setAppliedPromo] = useState(null); // store promo, separate from ambassador code
   const [codeError, setCodeError] = useState("");
   const manualCfg = SITE_CONFIG.manualPayments || {};
   const cardOn = !!manualCfg.card && BACKEND_LIVE; // Authorize.Net card checkout needs the live backend
@@ -2359,23 +2371,33 @@ function Checkout({ cart, setPage, addToCart }) {
     })();
   }, []);
 
+  // One field, two kinds of code: ambassador codes give the creator a commission,
+  // promo codes are store-run. Try ambassador first, then promo.
   const applyCode = async () => {
     const key = codeInput.trim().toUpperCase();
     if (!key) return;
+    if (appliedCode && appliedCode.code === key) { setCodeError("That code is already applied."); return; }
+    if (appliedPromo && appliedPromo.code === key) { setCodeError("That code is already applied."); return; }
     if (BACKEND_LIVE) {
       try {
         const res = await fetch(API_BASE + "/api/code/" + encodeURIComponent(key));
         const d = await res.json().catch(() => ({}));
-        if (d && d.valid) { setAppliedCode({ code: d.code, creator: d.creator, pct: d.pct }); setCodeError(""); }
-        else { setAppliedCode(null); setCodeError("That code isn't valid."); }
-      } catch (_) { setAppliedCode(null); setCodeError("Couldn't check that code. Try again."); }
+        if (d && d.valid) { setAppliedCode({ code: d.code, creator: d.creator, pct: d.pct }); setCodeError(""); setCodeInput(""); return; }
+      } catch (_) { setCodeError("Couldn't check that code. Try again."); return; }
+      try {
+        const res2 = await fetch(API_BASE + "/api/promo/" + encodeURIComponent(key));
+        const d2 = await res2.json().catch(() => ({}));
+        if (d2 && d2.valid) { setAppliedPromo({ code: d2.code, kind: d2.kind, value: d2.value, label: d2.label }); setCodeError(""); setCodeInput(""); return; }
+      } catch (_) { setCodeError("Couldn't check that code. Try again."); return; }
+      setCodeError("That code isn't valid.");
       return;
     }
     const found = allCreatorCodes()[key];
-    if (found) { setAppliedCode({ code: key, ...found }); setCodeError(""); }
+    if (found) { setAppliedCode({ code: key, ...found }); setCodeError(""); setCodeInput(""); }
     else { setAppliedCode(null); setCodeError("That code isn't valid."); }
   };
   const removeCode = () => { setAppliedCode(null); setCodeInput(""); setCodeError(""); };
+  const removePromo = () => { setAppliedPromo(null); setCodeError(""); };
   // Auto-apply an ambassador code shared via ?ref=CODE link.
   useEffect(() => {
     (async () => {
@@ -2394,8 +2416,23 @@ function Checkout({ cart, setPage, addToCart }) {
       } catch (_) { /* no-op */ }
     })();
   }, []);
-  const creatorDiscount = appliedCode ? Math.round(subtotal * appliedCode.pct) : 0;
-  const total = subtotal - creatorDiscount + shipping;
+  // Money is computed in CENTS here, exactly as priceOrder() does on the server.
+  // Rounding in whole dollars diverged from the server and could show the
+  // customer a total different from the one actually charged.
+  const subtotalCents = Math.round(subtotal * 100);
+  const creatorDiscountCents = appliedCode ? Math.round(subtotalCents * appliedCode.pct) : 0;
+  const afterAmbCents = Math.max(0, subtotalCents - creatorDiscountCents);
+  const promoDiscountCents = !appliedPromo ? 0
+    : appliedPromo.kind === "amount" ? Math.min(Math.max(0, appliedPromo.value), afterAmbCents)
+    : appliedPromo.kind === "pct" ? Math.round(afterAmbCents * (Math.min(100, Math.max(0, appliedPromo.value)) / 100))
+    : 0;
+  const freeShipPromo = !!appliedPromo && appliedPromo.kind === "freeship";
+  const shippingDue = freeShipPromo ? 0 : shipping;
+  const totalCents = Math.max(0, afterAmbCents - promoDiscountCents) + Math.round(shippingDue * 100);
+  const usd = (cents) => (cents / 100).toFixed(2);
+  const creatorDiscount = creatorDiscountCents / 100;
+  const promoDiscount = promoDiscountCents / 100;
+  const total = Number((totalCents / 100).toFixed(2));
 
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -2408,7 +2445,7 @@ function Checkout({ cart, setPage, addToCart }) {
     try {
       const res = await fetch(API_BASE + "/api/anet/hosted-token", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: items.map((i) => ({ variantId: i.variantId, qty: i.qty })), email: form.email, code: appliedCode ? appliedCode.code : null, customer: form, certifiedResearchUse: certified }),
+        body: JSON.stringify({ promo: appliedPromo ? appliedPromo.code : null, items: items.map((i) => ({ variantId: i.variantId, qty: i.qty })), email: form.email, code: appliedCode ? appliedCode.code : null, customer: form, certifiedResearchUse: certified }),
       });
       const d = await res.json();
       if (!res.ok || !d.token) throw new Error(d.error || "Couldn't start card payment. Please try again.");
@@ -2429,8 +2466,9 @@ function Checkout({ cart, setPage, addToCart }) {
     }
     const summary = {
       items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))) })),
-      subtotal, creatorDiscount, shipping, total,
+      subtotal, creatorDiscount, promoDiscount, shipping: shippingDue, total: usd(totalCents),
       code: appliedCode ? appliedCode.code : null,
+      promo: appliedPromo ? appliedPromo.code : null,
       method: "card", customer: form,
       preorder: items.some((i) => isPreorder(i.product)),
       placedAt: new Date().toISOString(),
@@ -2447,8 +2485,9 @@ function Checkout({ cart, setPage, addToCart }) {
     saveInfo();
     const summary = {
       items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))) })),
-      subtotal, creatorDiscount, shipping, total,
+      subtotal, creatorDiscount, promoDiscount, shipping: shippingDue, total: usd(totalCents),
       code: appliedCode ? appliedCode.code : null,
+      promo: appliedPromo ? appliedPromo.code : null,
       method: payMethod,
       customer: form,
       preorder: items.some((i) => isPreorder(i.product)),
@@ -2464,6 +2503,7 @@ function Checkout({ cart, setPage, addToCart }) {
             items: items.map((i) => ({ variantId: i.variantId, qty: i.qty })),
             email: form.email,
             code: appliedCode ? appliedCode.code : null,
+            promo: appliedPromo ? appliedPromo.code : null,
             method: payMethod,
             customer: form,
             certifiedResearchUse: certified,
@@ -2676,18 +2716,25 @@ function Checkout({ cart, setPage, addToCart }) {
             })}
             <hr className="lp-hairline" style={{ margin: "14px 0" }} />
 
-            {/* Creator / promo code */}
-            {appliedCode ? (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            {/* Creator code and/or store promo code — one field, both kinds */}
+            {appliedCode && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <span style={{ fontSize: 12.5, color: "var(--gold-bright)" }}>Code {appliedCode.code} applied (−{Math.round(appliedCode.pct * 100)}%)</span>
                 <button onClick={removeCode} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Remove</button>
               </div>
-            ) : (
+            )}
+            {appliedPromo && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontSize: 12.5, color: "var(--gold-bright)" }}>Promo {appliedPromo.code} applied ({appliedPromo.label})</span>
+                <button onClick={removePromo} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Remove</button>
+              </div>
+            )}
+            {(!appliedCode || !appliedPromo) && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     type="text"
-                    placeholder="Creator code"
+                    placeholder={appliedCode ? "Promo code" : "Creator or promo code"}
                     value={codeInput}
                     onChange={(e) => setCodeInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") applyCode(); }}
@@ -2702,17 +2749,22 @@ function Checkout({ cart, setPage, addToCart }) {
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8 }}>
               <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${subtotal}</span>
             </div>
+            {promoDiscount > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, color: "var(--gold-bright)" }}>
+                <span>Promo {appliedPromo ? appliedPromo.code : ""}</span><span>−${usd(promoDiscountCents)}</span>
+              </div>
+            )}
             {creatorDiscount > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8, color: "var(--gold-bright)" }}>
-                <span>Creator discount</span><span>−${creatorDiscount}</span>
+                <span>Creator discount</span><span>−${usd(creatorDiscountCents)}</span>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 14 }}>
-              <span style={{ color: "var(--muted)" }}>Shipping</span><span>{shipping === 0 ? "Free" : `$${shipping}`}</span>
+              <span style={{ color: "var(--muted)" }}>Shipping</span><span>{shippingDue === 0 ? "Free" : `$${shippingDue}`}</span>
             </div>
             <hr className="lp-hairline" style={{ margin: "14px 0" }} />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, color: "var(--gold-bright)" }}>
-              <span>Total</span><span>${total}</span>
+              <span>Total</span><span>${usd(totalCents)}</span>
             </div>
           </div>
           {items.some((i) => isPreorder(i.product)) && (
@@ -3222,8 +3274,10 @@ function AuthGate({ onAuthenticated }) {
           setLoading(false);
           return;
         }
-        if (rememberMe && data.token) {
-          await window.storage.set("session", JSON.stringify({ email: data.email, token: data.token }), false);
+        // Always keep the token (needed for order history / reorder). The
+        // `remember` flag alone decides whether we auto-sign-in next visit.
+        if (data.token) {
+          await window.storage.set("session", JSON.stringify({ email: data.email, token: data.token, remember: !!rememberMe }), false);
         }
         onAuthenticated(data.email || email.toLowerCase());
         setLoading(false);
@@ -3598,6 +3652,15 @@ const FAQ_ITEMS = [
   { q: "What payment methods do you accept?", a: "Accepted payment methods are shown at checkout. If a method you'd like isn't available, contact us and we'll let you know the current options." },
   { q: "Can I return an order?", a: "Because these are sensitive research materials, we generally cannot accept returns once an order has shipped, for quality-control and safety reasons. If your order arrives damaged or incorrect, contact us within 7 days for a replacement or refund." },
   { q: "Do you offer volume discounts?", a: "Yes — buying multiple vials of a compound unlocks tiered savings (2+ saves 5%, 3+ saves 10%, 5+ saves 15%), shown right on each product page. We also offer pre-built bundle kits priced below the sum of their vials." },
+  { q: "What does 'research use only' actually mean?", a: "Every compound we supply is intended solely for in-vitro laboratory research and analytical work by qualified professionals. Nothing we sell is a drug, supplement, or food, and none of it is approved for human or veterinary use, diagnosis, or treatment. Purchasing requires certifying that intended use at checkout." },
+  { q: "What is HPLC purity, and why does it matter?", a: "High-Performance Liquid Chromatography separates a sample into its components so each can be measured. A 99% HPLC result means that, by peak area, 99% of the material is the target compound. It matters because impurities and truncated sequences change how a compound behaves in an assay, and inconsistent purity makes results impossible to reproduce." },
+  { q: "How do I read a Certificate of Analysis?", a: "A COA identifies the batch, states the analytical method used (typically HPLC and mass spectrometry), and reports the measured purity and molecular weight. Check that the batch number on the COA matches the number printed on your vial, and that the reported mass matches the compound's expected molecular weight." },
+  { q: "Why does molecular weight matter?", a: "Molecular weight is what lets a researcher convert between mass and moles, so it underpins every concentration calculation made from a lyophilized powder. If the stated molecular weight is wrong, every downstream molarity figure derived from it is wrong too — which is why we verify it against public chemical databases before publishing a spec sheet." },
+  { q: "What is lyophilized powder?", a: "Lyophilization, or freeze-drying, removes water from a compound under vacuum at low temperature. The resulting powder is far more stable in transit and storage than a solution, which is why peptides are shipped in this form. It appears as a small white cake or film at the bottom of the vial — a barely visible amount is normal and does not indicate a short fill." },
+  { q: "Is bacteriostatic water the same as sterile water?", a: "No. Bacteriostatic water contains roughly 0.9% benzyl alcohol, which inhibits bacterial growth and allows a container to be used across a longer working period. Sterile water contains no preservative. They are not interchangeable, and both are supplied strictly as laboratory reagents." },
+  { q: "How long do compounds remain stable?", a: "Stability depends on the compound, the temperature, and whether it has been reconstituted. As a general laboratory practice, lyophilized powder stored at -20°C and protected from light is the most stable form, and reconstituted material is markedly less stable. Consult the specific compound's literature for its documented stability window." },
+  { q: "Do you ship internationally?", a: "Shipping availability varies by destination and by the regulations that apply to research chemicals in each country. Contact us before ordering from outside the United States so we can confirm whether we can ship to you." },
+  { q: "What if my order arrives damaged?", a: "Photograph the package and the vial before handling anything further, then email us the photos along with your order number. Damaged or incorrect shipments are replaced." },
 ];
 
 function FAQPage({ setPage }) {
@@ -3608,7 +3671,11 @@ function FAQPage({ setPage }) {
         <ChevronLeft size={14} /> Home
       </button>
       <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Support</div>
-      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 36 }}>Frequently asked questions</h1>
+      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 12 }}>Frequently asked questions</h1>
+      <p style={{ color: "var(--muted)", fontSize: 13.5, lineHeight: 1.7, marginBottom: 28 }}>
+        Purity, certificates of analysis, storage, and handling — answered. For the underlying concepts, see our{" "}
+        <button className="lp-nav-link" onClick={() => setPage("guide")} style={{ color: "var(--gold-bright)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>research guide</button>.
+      </p>
       <div style={{ borderTop: "1px solid var(--line)" }}>
         {FAQ_ITEMS.map((item, i) => {
           const isOpen = open === i;
@@ -4061,6 +4128,9 @@ function OwnerPortal({ setPage }) {
   const [orderQuery, setOrderQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | awaiting | paid | shipped
   const [stats, setStats] = useState(null); // first-party analytics (live only)
+  const [promos, setPromos] = useState([]);
+  const [promoForm, setPromoForm] = useState({ code: "", kind: "pct", value: "", expiresAt: "", maxUses: "" });
+  const [promoMsg, setPromoMsg] = useState("");
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -4218,6 +4288,32 @@ function OwnerPortal({ setPage }) {
 
   const signOut = () => { setAuthed(false); setPin(""); setData(null); setError(""); setSampleMode(false); try { window.storage.delete("owner:auth", false); } catch (_) { /* ignore */ } };
 
+  const loadPromos = async (p) => {
+    if (!live) return;
+    try { const r = await fetch(API_BASE + "/api/owner/promos?pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setPromos(d.promos || []); } } catch (_) { /* ignore */ }
+  };
+  const savePromo = async () => {
+    setPromoMsg("");
+    const value = promoForm.kind === "amount" ? Math.round(Number(promoForm.value) * 100) : Number(promoForm.value);
+    try {
+      const r = await fetch(API_BASE + "/api/owner/promos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin, code: promoForm.code, kind: promoForm.kind, value, expiresAt: promoForm.expiresAt || null, maxUses: promoForm.maxUses || null }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setPromoMsg(d.error || "Couldn't save that code."); return; }
+      setPromoForm({ code: "", kind: "pct", value: "", expiresAt: "", maxUses: "" });
+      setPromoMsg("Saved.");
+      loadPromos(pin);
+    } catch (_) { setPromoMsg("Couldn't reach the server."); }
+  };
+  const togglePromo = async (code) => {
+    try { await fetch(API_BASE + "/api/owner/promos/toggle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, code }) }); loadPromos(pin); } catch (_) { /* ignore */ }
+  };
+  const deletePromo = async (code) => {
+    if (!window.confirm(`Delete promo code ${code}? Orders that already used it are unaffected.`)) return;
+    try { await fetch(API_BASE + "/api/owner/promos?pin=" + encodeURIComponent(pin) + "&code=" + encodeURIComponent(code), { method: "DELETE" }); loadPromos(pin); } catch (_) { /* ignore */ }
+  };
   const loadStats = async (p) => {
     if (!live) return;
     try { const r = await fetch(API_BASE + "/api/owner/analytics?pin=" + encodeURIComponent(p)); if (r.ok) setStats(await r.json()); } catch (_) { /* ignore */ }
@@ -4235,8 +4331,9 @@ function OwnerPortal({ setPage }) {
     } catch (_) { /* keep current */ }
     loadInbox(pin);
     loadStats(pin);
+    loadPromos(pin);
   };
-  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); } }, [authed]);
+  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); } }, [authed]);
 
   const markPaid = async (orderId) => {
     if (live) {
@@ -4553,6 +4650,51 @@ function OwnerPortal({ setPage }) {
           </div>
         );
       })()}
+
+      {/* Promo codes */}
+      {live && (
+        <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+            <DollarSign size={14} color="var(--gold-bright)" />
+            <div className="lp-eyebrow">Promo codes</div>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Store-run discounts. Separate from ambassador codes — these pay no commission.</p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 10 }}>
+            <input type="text" placeholder="CODE" value={promoForm.code} onChange={(e) => setPromoForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} style={{ fontSize: 12.5 }} />
+            <select value={promoForm.kind} onChange={(e) => setPromoForm((f) => ({ ...f, kind: e.target.value }))} style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", padding: "8px", fontSize: 12.5 }}>
+              <option value="pct">% off</option>
+              <option value="amount">$ off</option>
+              <option value="freeship">Free shipping</option>
+            </select>
+            {promoForm.kind !== "freeship" && (
+              <input type="number" placeholder={promoForm.kind === "pct" ? "10 (%)" : "5.00 ($)"} value={promoForm.value} onChange={(e) => setPromoForm((f) => ({ ...f, value: e.target.value }))} style={{ fontSize: 12.5 }} />
+            )}
+            <input type="date" title="Expires (optional)" value={promoForm.expiresAt} onChange={(e) => setPromoForm((f) => ({ ...f, expiresAt: e.target.value }))} style={{ fontSize: 12.5 }} />
+            <input type="number" placeholder="Max uses" value={promoForm.maxUses} onChange={(e) => setPromoForm((f) => ({ ...f, maxUses: e.target.value }))} style={{ fontSize: 12.5 }} />
+            <button className="lp-btn lp-btn-solid" onClick={savePromo} style={{ fontSize: 12 }}>Save code</button>
+          </div>
+          {promoMsg && <p style={{ fontSize: 11.5, color: promoMsg === "Saved." ? "var(--gold-bright)" : "#c98a6c", marginBottom: 10 }}>{promoMsg}</p>}
+
+          {promos.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No promo codes yet.</p>
+          ) : promos.map((pr, i) => {
+            const label = pr.kind === "pct" ? `${pr.value}% off` : pr.kind === "amount" ? `$${(pr.value / 100).toFixed(2)} off` : "Free shipping";
+            const used = pr.max_uses ? `${pr.uses}/${pr.max_uses} used` : `${pr.uses} used`;
+            return (
+              <div key={pr.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "8px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)", fontSize: 13 }}>
+                <span style={{ color: pr.active ? "var(--cream)" : "var(--muted)" }}>
+                  {pr.code} <span style={{ color: "var(--muted)", fontSize: 11.5 }}>· {label} · {used}{pr.expires_at ? ` · ends ${pr.expires_at}` : ""}{pr.active ? "" : " · paused"}</span>
+                </span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  <button className="lp-btn" onClick={() => togglePromo(pr.code)} style={{ fontSize: 11, padding: "5px 10px" }}>{pr.active ? "Pause" : "Resume"}</button>
+                  <button className="lp-btn" onClick={() => deletePromo(pr.code)} style={{ fontSize: 11, padding: "5px 10px" }}>Delete</button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <InventoryPanel inventory={inventory} setInventory={setInventory} threshold={invThreshold} setThreshold={setInvThreshold} />
 
@@ -5180,6 +5322,262 @@ function AmbassadorPage({ setPage }) {
 }
 
 
+// ── Research guide: education content (search traffic + pre-purchase answers) ─
+const GUIDE_SECTIONS = [
+  {
+    title: "Purity and how it's measured",
+    body: [
+      "Purity is reported by High-Performance Liquid Chromatography (HPLC), which separates a sample into its components and measures each as a proportion of total peak area. A result of 99% means the target compound accounts for 99% of what the detector saw.",
+      "Purity alone doesn't confirm identity. Mass spectrometry is used alongside HPLC to confirm that the compound present is the compound named — that its measured mass matches its expected molecular weight. A sample can be highly pure and still be the wrong molecule.",
+      "Two batches of the same compound at different purities will not behave identically in an assay. This is the practical reason reproducible research depends on per-batch documentation rather than a supplier's general claim.",
+    ],
+  },
+  {
+    title: "Reading a Certificate of Analysis",
+    body: [
+      "A COA is a per-batch analytical record. It should state the batch or lot number, the analytical methods used, the measured purity, and the observed molecular weight.",
+      "The first thing to check is that the batch number on the certificate matches the number printed on the vial you received. A COA for a different batch tells you nothing about the material in your hand.",
+      "Next, confirm the reported mass is consistent with the compound's known molecular weight. A significant discrepancy means either the wrong compound or an error in the documentation — both worth resolving before the material is used.",
+    ],
+  },
+  {
+    title: "Molecular weight and concentration",
+    body: [
+      "Molecular weight (g/mol) is the bridge between mass and moles. Every conversion from a weighed quantity of lyophilized powder to a molar concentration passes through it.",
+      "Because that conversion is unavoidable, an incorrect molecular weight silently corrupts every concentration derived from it. Published spec figures should be cross-checked against a public chemical database such as PubChem rather than taken on trust.",
+      "Molecular formula matters for the same reason. A formula containing an element the compound doesn't actually possess is a signal that the specification was transcribed incorrectly somewhere upstream.",
+    ],
+  },
+  {
+    title: "Lyophilized powder, storage, and handling",
+    body: [
+      "Lyophilization removes water under vacuum at low temperature, leaving a dry cake or thin film. This form is substantially more stable in transit and storage than material in solution, which is why peptides ship this way.",
+      "The visible quantity in a vial is often very small — a faint film rather than an obvious powder. This is normal at milligram scale and is not evidence of a short fill; the vial is filled by mass, not by volume.",
+      "As general laboratory practice, lyophilized material stored below freezing and protected from light is the most stable form. Material in solution degrades considerably faster, and repeated freeze-thaw cycles accelerate that further.",
+    ],
+  },
+  {
+    title: "Bacteriostatic versus sterile water",
+    body: [
+      "Bacteriostatic water contains approximately 0.9% benzyl alcohol, a preservative that inhibits bacterial growth. Sterile water contains no preservative at all.",
+      "The two are not interchangeable, and the distinction is not cosmetic: the preservative is what permits a container to be accessed more than once over a working period without supporting microbial growth.",
+      "Both are supplied strictly as laboratory reagents, for use in in-vitro work by qualified personnel.",
+    ],
+  },
+];
+
+function ResearchGuide({ setPage }) {
+  return (
+    <div className="lp-fade" style={{ maxWidth: 820, margin: "0 auto", padding: "64px 28px 100px" }}>
+      <button className="lp-nav-link" onClick={() => setPage("home")} style={{ marginBottom: 24, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <ChevronLeft size={14} /> Home
+      </button>
+      <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Education</div>
+      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 12 }}>Research guide</h1>
+      <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.8, marginBottom: 14 }}>
+        Background on the analytical terms that appear on our product pages and certificates of analysis:
+        what HPLC purity actually measures, how to read a COA, why molecular weight underpins every
+        concentration calculation, and how lyophilized material should be stored.
+      </p>
+
+      <div style={{ border: "1px solid var(--gold)", background: "linear-gradient(135deg, rgba(176,130,67,0.12), transparent 72%)", padding: "14px 16px", marginBottom: 40, display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <AlertCircle size={16} color="var(--gold-bright)" style={{ flexShrink: 0, marginTop: 2 }} />
+        <p style={{ fontSize: 13, color: "var(--cream)", lineHeight: 1.6, margin: 0 }}>
+          This page is analytical background for laboratory professionals. It is not medical guidance, and it
+          describes no human or veterinary use. All compounds sold here are for in-vitro research only.
+        </p>
+      </div>
+
+      {GUIDE_SECTIONS.map((sec) => (
+        <section key={sec.title} style={{ marginBottom: 40 }}>
+          <h2 className="lp-serif" style={{ fontSize: 23, fontWeight: 400, marginBottom: 14 }}>{sec.title}</h2>
+          {sec.body.map((para, i) => (
+            <p key={i} style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.85, marginBottom: 14 }}>{para}</p>
+          ))}
+        </section>
+      ))}
+
+      <hr className="lp-hairline" style={{ margin: "10px 0 30px" }} />
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button className="lp-btn lp-btn-solid" onClick={() => setPage("shop")}>Browse the catalog</button>
+        <button className="lp-btn" onClick={() => setPage("faq")}>Read the FAQ</button>
+        <button className="lp-btn" onClick={() => setPage("calculator")}>Reconstitution calculator</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Account: server-side order history + one-tap reorder ───────────────────
+function AccountPage({ setPage, addToCart, userEmail }) {
+  const [orders, setOrders] = useState(null);   // null = loading
+  const [error, setError] = useState("");
+  const [added, setAdded] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      if (!BACKEND_LIVE) { setOrders([]); setError("preview"); return; }
+      const token = await getAuthToken();
+      if (!token) { setOrders([]); setError("signin"); return; }
+      try {
+        const res = await fetch(API_BASE + "/api/account/orders", { headers: { Authorization: "Bearer " + token } });
+        if (res.status === 401) { setOrders([]); setError("signin"); return; }
+        if (!res.ok) { setOrders([]); setError("load"); return; }
+        const d = await res.json();
+        setOrders(d.orders || []);
+      } catch (_) { setOrders([]); setError("load"); }
+    })();
+  }, []);
+
+  const reorder = (o) => {
+    let n = 0;
+    for (const it of o.items || []) {
+      const prod = PRODUCTS.find((x) => x.id === it.product_id);
+      if (!prod || isSoldOut(prod)) continue;
+      const variant = prod.variants.find((v) => v.id === it.variant_id);
+      if (!variant) continue;
+      addToCart(prod.id, variant.id, it.qty || 1);
+      n++;
+    }
+    if (n === 0) { setAdded("Those items are no longer available."); return; }
+    setAdded(`Added ${n} item${n === 1 ? "" : "s"} to your cart.`);
+    setTimeout(() => setPage("cart"), 700);
+  };
+
+  const statusLabel = (st) => st === "paid" ? "Paid" : st === "shipped" ? "Shipped" : st === "cancelled" ? "Cancelled" : "Awaiting payment";
+
+  return (
+    <div className="lp-fade" style={{ maxWidth: 780, margin: "0 auto", padding: "64px 28px 100px" }}>
+      <button className="lp-nav-link" onClick={() => setPage("home")} style={{ marginBottom: 24, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <ChevronLeft size={14} /> Home
+      </button>
+      <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Your account</div>
+      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 8 }}>Order history</h1>
+      <p style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: 32 }}>
+        {userEmail && userEmail !== "guest" ? userEmail : "Sign in to see your orders."}
+      </p>
+
+      {orders === null && <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Loading your orders…</p>}
+
+      {orders && error === "signin" && (
+        <div style={{ border: "1px solid var(--line)", padding: "26px 22px", textAlign: "center" }}>
+          <p style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: 16 }}>Sign in to view your order history and reorder in one tap.</p>
+          <button className="lp-btn lp-btn-solid" onClick={() => setPage("orders")}>View orders on this device</button>
+        </div>
+      )}
+      {orders && error === "preview" && (
+        <div style={{ border: "1px solid var(--line)", padding: "26px 22px", textAlign: "center" }}>
+          <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Order history appears here once the site is live.</p>
+        </div>
+      )}
+      {orders && error === "load" && (
+        <p style={{ fontSize: 13, color: "#c98a6c" }}>Couldn't load your orders. Please try again shortly.</p>
+      )}
+
+      {orders && !error && orders.length === 0 && (
+        <div style={{ border: "1px solid var(--line)", padding: "34px 22px", textAlign: "center" }}>
+          <p style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: 18 }}>You haven't placed any orders yet.</p>
+          <button className="lp-btn lp-btn-solid" onClick={() => setPage("shop")}>Browse the catalog</button>
+        </div>
+      )}
+
+      {added && <p style={{ fontSize: 13, color: "var(--gold-bright)", marginBottom: 14 }}>{added}</p>}
+
+      {orders && orders.map((o) => (
+        <div key={o.reference} style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+            <span className="lp-serif" style={{ fontSize: 17, color: "var(--gold-bright)" }}>{o.reference}</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{String(o.created_at || "").slice(0, 10)} · {statusLabel(o.status)}</span>
+          </div>
+          <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7, marginBottom: 12 }}>
+            {(o.items || []).map((it) => <div key={it.variant_id}>{it.name} × {it.qty}</div>)}
+          </div>
+          {o.tracking && <p style={{ fontSize: 12.5, marginBottom: 10 }}>Tracking: <span style={{ color: "var(--cream)" }}>{o.tracking}</span></p>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 14 }}>Total <span style={{ color: "var(--gold-bright)" }}>${((o.total_cents || 0) / 100).toFixed(2)}</span></span>
+            <button className="lp-btn lp-btn-solid" onClick={() => reorder(o)} style={{ fontSize: 12 }}>Reorder</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Public order status lookup (order number + email) ──────────────────────
+function OrderStatusPage({ setPage }) {
+  const [ref, setRef] = useState("");
+  const [email, setEmail] = useState("");
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const lookup = async () => {
+    setError(""); setResult(null);
+    if (!ref.trim() || !email.trim()) { setError("Enter your order number and the email you used."); return; }
+    if (!BACKEND_LIVE) { setError("Order lookup works once the site is live."); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(API_BASE + "/api/order-status?ref=" + encodeURIComponent(ref.trim()) + "&email=" + encodeURIComponent(email.trim()));
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(d.error || "We couldn't find that order."); setLoading(false); return; }
+      setResult(d);
+    } catch (_) { setError("Couldn't reach the server. Try again shortly."); }
+    setLoading(false);
+  };
+
+  const steps = ["Order received", "Payment confirmed", "Shipped"];
+  const stepIndex = !result ? -1 : result.status === "shipped" ? 2 : (result.paid_at || result.status === "paid") ? 1 : 0;
+
+  return (
+    <div className="lp-fade" style={{ maxWidth: 640, margin: "0 auto", padding: "64px 28px 100px" }}>
+      <button className="lp-nav-link" onClick={() => setPage("home")} style={{ marginBottom: 24, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <ChevronLeft size={14} /> Home
+      </button>
+      <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Support</div>
+      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 10 }}>Track your order</h1>
+      <p style={{ color: "var(--muted)", fontSize: 13.5, lineHeight: 1.7, marginBottom: 28 }}>
+        Enter your order number and the email you used at checkout.
+      </p>
+
+      <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+        <input type="text" placeholder="Order number (e.g. LP-XXXXXX)" value={ref} onChange={(e) => setRef(e.target.value)} style={{ fontSize: 14 }} />
+        <input type="email" placeholder="Email used at checkout" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") lookup(); }} style={{ fontSize: 14 }} />
+        <button className="lp-btn lp-btn-solid" onClick={lookup} disabled={loading}>{loading ? "Checking…" : "Check status"}</button>
+      </div>
+      {error && <p style={{ fontSize: 13, color: "#c98a6c", marginBottom: 20 }}>{error}</p>}
+
+      {result && (
+        <div style={{ border: "1px solid var(--gold)", padding: "22px 20px", marginTop: 10 }}>
+          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Order</div>
+          <div className="lp-serif" style={{ fontSize: 26, color: "var(--gold-bright)", marginBottom: 16 }}>{result.reference}</div>
+
+          {result.status === "cancelled" ? (
+            <p style={{ fontSize: 13.5, color: "#c98a6c" }}>This order was cancelled. Contact {SITE_CONFIG.ordersEmail} with any questions.</p>
+          ) : (
+            <div style={{ marginBottom: 16 }}>
+              {steps.map((label, i) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0" }}>
+                  <span style={{ width: 18, height: 18, borderRadius: "50%", border: "1px solid " + (i <= stepIndex ? "var(--gold-bright)" : "var(--line)"), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {i <= stepIndex && <Check size={11} color="var(--gold-bright)" />}
+                  </span>
+                  <span style={{ fontSize: 13.5, color: i <= stepIndex ? "var(--cream)" : "var(--muted)" }}>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result.tracking && (
+            <p style={{ fontSize: 13, marginBottom: 10 }}>Tracking number: <span style={{ color: "var(--gold-bright)" }}>{result.tracking}</span></p>
+          )}
+          <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.8, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+            {(result.items || []).map((it, i) => <div key={i}>{it.name} × {it.qty}</div>)}
+            <div style={{ marginTop: 8 }}>Total <span style={{ color: "var(--gold-bright)" }}>${((result.total_cents || 0) / 100).toFixed(2)}</span></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LuxuryPeps() {
   const [authChecked, setAuthChecked] = useState(false);
   const [userEmail, setUserEmail] = useState(null);
@@ -5204,7 +5602,7 @@ function LuxuryPeps() {
         const session = await window.storage.get("session", false);
         if (session) {
           const data = JSON.parse(session.value);
-          setUserEmail(data.email);
+          if (data.remember !== false) setUserEmail(data.email);
         }
       } catch (_) {
         // no active session
@@ -5568,6 +5966,9 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "checkout" && <Checkout cart={cart} setPage={setPage} addToCart={addToCart} />}
       {page === "success" && <Success setPage={setPage} clearCart={clearCart} />}
       {page === "orders" && <Orders setPage={setPage} />}
+      {page === "account" && <AccountPage setPage={setPage} addToCart={addToCart} userEmail={userEmail} />}
+      {page === "status" && <OrderStatusPage setPage={setPage} />}
+      {page === "guide" && <ResearchGuide setPage={setPage} />}
       {page === "about" && <About setPage={setPage} />}
       {page === "calculator" && <Calculator setPage={setPage} />}
       {page === "terms" && <TermsPage setPage={setPage} />}
@@ -5580,7 +5981,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "owner" && <OwnerPortal setPage={setPage} />}
       {page === "batch" && <BatchLookup setPage={setPage} openProduct={openProduct} />}
       {page === "compare" && <ComparePage setPage={setPage} openProduct={openProduct} />}
-      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare" ].includes(page) && (
+      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare","account","status","guide" ].includes(page) && (
         <div className="lp-fade" style={{ maxWidth: 600, margin: "0 auto", padding: "100px 28px", textAlign: "center" }}>
           <div className="lp-eyebrow" style={{ marginBottom: 12 }}>404</div>
           <h2 className="lp-serif" style={{ fontSize: 30, marginBottom: 14 }}>Page not found</h2>
