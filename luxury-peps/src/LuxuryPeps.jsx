@@ -19,7 +19,7 @@ const SITE_CONFIG = {
   hours: "Mon–Fri, 9am–5pm",
   // Pre-order: flip `preorder` to false the moment stock arrives.
   preorder: true,
-  preorderShipEstimate: "5–10 days",
+  preorderShipEstimate: "4–8 days",
   effectiveDate: "June 27, 2026",
   freeShipThreshold: 150,
   flatShip: 12,
@@ -4135,6 +4135,7 @@ function OwnerPortal({ setPage }) {
   const [pendingReviews, setPendingReviews] = useState([]);
   const [diag, setDiag] = useState(null);
   const [testEmailResult, setTestEmailResult] = useState("");
+  const [clearMsg, setClearMsg] = useState("");
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -4291,6 +4292,29 @@ function OwnerPortal({ setPage }) {
   };
 
   const signOut = () => { setAuthed(false); setPin(""); setData(null); setError(""); setSampleMode(false); try { window.storage.delete("owner:auth", false); } catch (_) { /* ignore */ } };
+
+  // Archives abandoned checkouts (card form opened, never paid). Only ever
+  // touches rows with no paid_at, so a real order can't be swept up.
+  const clearIncomplete = async () => {
+    if (!live) return;
+    let n = 0;
+    try {
+      const c = await fetch(API_BASE + "/api/owner/incomplete-count?hours=24&pin=" + encodeURIComponent(pin));
+      if (c.ok) n = (await c.json()).count || 0;
+    } catch (_) { /* fall through to confirm anyway */ }
+    if (n === 0) { setClearMsg("No incomplete checkouts older than 24 hours."); return; }
+    if (!window.confirm(`Archive ${n} incomplete checkout${n === 1 ? "" : "s"} older than 24 hours?\n\nThese were never paid. Paid orders are never touched.`)) return;
+    try {
+      const r = await fetch(API_BASE + "/api/owner/clear-incomplete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin, hours: 24 }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setClearMsg(d.error || "Couldn't clear them."); return; }
+      setClearMsg(`Archived ${d.archived} incomplete checkout${d.archived === 1 ? "" : "s"}.`);
+      refresh();
+    } catch (_) { setClearMsg("Couldn't reach the server."); }
+  };
 
   const loadDiagnostics = async () => {
     if (!live) return;
@@ -4580,9 +4604,9 @@ function OwnerPortal({ setPage }) {
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>to ambassadors</div>
         </div>
         <div style={card}>
-          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Pending</div>
-          <div className="lp-serif" style={{ fontSize: 26 }}>{money(view.pendingSalesCents)}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{view.pendingOrders} awaiting payment</div>
+          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Incomplete Checkouts</div>
+          <div className="lp-serif" style={{ fontSize: 26 }}>{view.pendingOrders}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{money(view.pendingSalesCents)} never paid</div>
         </div>
         <div style={card}>
           <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Total Orders <span style={{ textTransform: "none", letterSpacing: 0, opacity: 0.6 }}>(excl. archived)</span></div>
@@ -4593,7 +4617,7 @@ function OwnerPortal({ setPage }) {
       {/* Needs attention */}
       {(() => {
         const alerts = [];
-        if (view.pendingOrders > 0) alerts.push(view.pendingOrders + " order" + (view.pendingOrders === 1 ? "" : "s") + " awaiting payment confirmation");
+        if (view.pendingOrders > 0) alerts.push(view.pendingOrders + " incomplete checkout" + (view.pendingOrders === 1 ? "" : "s") + " (card form opened, never paid) confirmation");
         const owed = (view.commissionOwedCents || 0) - Object.values(view.paidOutByCode || {}).reduce((a, b) => a + b, 0);
         if (owed > 0) alerts.push(money(owed) + " in commission owed to ambassadors");
         if (trackedOut.length > 0) alerts.push(trackedOut.length + " product" + (trackedOut.length === 1 ? "" : "s") + " out of stock");
@@ -4703,7 +4727,15 @@ function OwnerPortal({ setPage }) {
               <div style={{ color: "var(--muted)", marginBottom: 12 }}>
                 Version: <span style={{ color: diag.backendVersion ? "var(--cream)" : "#c98a6c" }}>{diag.backendVersion || "OLD — backend file not uploaded"}</span><br />
                 {diag.orderCounts && (
-                  <>Orders in database: <span style={{ color: "var(--cream)" }}>{diag.orderCounts.total}</span> total · <span style={{ color: "var(--cream)" }}>{diag.orderCounts.active}</span> active · <span style={{ color: "var(--cream)" }}>{diag.orderCounts.archived}</span> archived</>
+                  <>Orders in database: <span style={{ color: "var(--cream)" }}>{diag.orderCounts.total}</span> total · <span style={{ color: "var(--cream)" }}>{diag.orderCounts.active}</span> active · <span style={{ color: "var(--cream)" }}>{diag.orderCounts.archived}</span> archived<br /></>
+                )}
+                {diag.awaiting && (
+                  <>Awaiting payment: <span style={{ color: "var(--cream)" }}>{diag.awaiting.awaitingActive}</span> active · <span style={{ color: "var(--cream)" }}>{diag.awaiting.awaitingArchived}</span> archived<br /></>
+                )}
+                {(diag.archivedShapes || []).length > 0 && (
+                  <>archived column: {diag.archivedShapes.map((r, i) => (
+                    <span key={i} style={{ color: "var(--cream)" }}>{String(r.value)} ({r.type}) ×{r.n}{i < diag.archivedShapes.length - 1 ? ", " : ""}</span>
+                  ))}</>
                 )}
               </div>
 
@@ -4908,6 +4940,7 @@ function OwnerPortal({ setPage }) {
                     <button key={key} onClick={() => setStatusFilter(key)} style={{ fontSize: 10.5, padding: "6px 11px", cursor: "pointer", border: "none", background: statusFilter === key ? "var(--gold)" : "transparent", color: statusFilter === key ? "var(--bg)" : "var(--muted)" }}>{label}</button>
                   ))}
                 </div>
+                {live && <button className="lp-btn" onClick={clearIncomplete} style={{ fontSize: 10.5, padding: "7px 12px" }} title="Archive card forms that were opened but never paid (older than 24h)">Clear incomplete</button>}
                 <button className="lp-btn" onClick={exportOrdersCsv} style={{ fontSize: 10.5, padding: "7px 12px" }}>Export CSV</button>
               </div>
               {all.length > 0 && (() => {
@@ -4925,6 +4958,7 @@ function OwnerPortal({ setPage }) {
                   </div>
                 );
               })()}
+              {clearMsg && <p style={{ fontSize: 11.5, color: "var(--gold-bright)", margin: "0 0 10px" }}>{clearMsg}</p>}
               {all.length === 0 ? (
                 <p style={{ color: "var(--muted)", fontSize: 13, margin: "4px 0 12px", lineHeight: 1.7 }}>No orders yet.</p>
               ) : filtered.length === 0 ? (
