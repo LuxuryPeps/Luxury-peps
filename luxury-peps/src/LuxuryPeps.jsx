@@ -4585,7 +4585,7 @@ function OwnerPortal({ setPage }) {
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{view.pendingOrders} awaiting payment</div>
         </div>
         <div style={card}>
-          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Total Orders</div>
+          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Total Orders <span style={{ textTransform: "none", letterSpacing: 0, opacity: 0.6 }}>(excl. archived)</span></div>
           <div className="lp-serif" style={{ fontSize: 26 }}>{view.totalOrders}</div>
         </div>
       </div>
@@ -4699,9 +4699,20 @@ function OwnerPortal({ setPage }) {
           {diag === "loading" && <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Checking…</p>}
           {diag && diag !== "loading" && (
             <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
+              <div className="lp-eyebrow" style={{ marginBottom: 6 }}>Backend</div>
+              <div style={{ color: "var(--muted)", marginBottom: 12 }}>
+                Version: <span style={{ color: diag.backendVersion ? "var(--cream)" : "#c98a6c" }}>{diag.backendVersion || "OLD — backend file not uploaded"}</span><br />
+                {diag.orderCounts && (
+                  <>Orders in database: <span style={{ color: "var(--cream)" }}>{diag.orderCounts.total}</span> total · <span style={{ color: "var(--cream)" }}>{diag.orderCounts.active}</span> active · <span style={{ color: "var(--cream)" }}>{diag.orderCounts.archived}</span> archived</>
+                )}
+              </div>
+
               <div className="lp-eyebrow" style={{ marginBottom: 6 }}>Settings</div>
               <div style={{ color: "var(--muted)" }}>
-                Owner email: <span style={{ color: diag.env.OWNER_EMAIL === "(NOT SET)" ? "#c98a6c" : "var(--cream)" }}>{diag.env.OWNER_EMAIL}</span><br />
+                Owner email: <span style={{ color: "var(--cream)" }}>{diag.env.OWNER_EMAIL}</span>{" "}
+                <span style={{ color: diag.env.OWNER_EMAIL_from_env ? "var(--gold-bright)" : "#c98a6c", fontSize: 11 }}>
+                  {diag.env.OWNER_EMAIL_from_env ? "(from OWNER_EMAIL)" : "(fallback — OWNER_EMAIL not set in Cloudflare)"}
+                </span><br />
                 From address: <span style={{ color: "var(--cream)" }}>{diag.env.FROM_EMAIL}</span><br />
                 Resend key: <span style={{ color: diag.env.RESEND_API_KEY ? "var(--cream)" : "#c98a6c" }}>{diag.env.RESEND_API_KEY ? "set" : "MISSING"}</span> · Signature key: <span style={{ color: diag.env.ANET_SIGNATURE_KEY ? "var(--cream)" : "#c98a6c" }}>{diag.env.ANET_SIGNATURE_KEY ? "set" : "MISSING"}</span>
               </div>
