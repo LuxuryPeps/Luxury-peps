@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-09.2";
+const BACKEND_VERSION = "2026-07-09.4";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -232,6 +232,38 @@ export async function onRequest(context) {
   const body = method === "POST" ? await request.json().catch(() => ({})) : {};
 
   try {
+    // ---- OWNER: archive abandoned checkouts --------------------------------
+    // A card order row is created when the payment form opens, before any card is
+    // entered. If it's still unpaid hours later the customer never completed it.
+    // This only ever touches rows with NO paid_at — a paid order can't be caught.
+    if (path === "/api/owner/clear-incomplete" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const hours = Math.max(1, Math.min(720, Math.floor(Number(body.hours) || 24)));
+      const r = await db.run(
+        `update orders set archived=1
+         where paid_at is null
+           and status='awaiting_payment'
+           and coalesce(archived,0)=0
+           and created_at <= datetime('now', ?)`,
+        `-${hours} hours`
+      );
+      const archived = (r && r.meta && typeof r.meta.changes === "number") ? r.meta.changes : 0;
+      return J({ ok: true, archived, hours });
+    }
+
+    // ---- OWNER: how many would that clear? ---------------------------------
+    if (path === "/api/owner/incomplete-count" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const hours = Math.max(1, Math.min(720, Math.floor(Number(qs.get("hours")) || 24)));
+      const row = await db.first(
+        `select count(*) as n from orders
+         where paid_at is null and status='awaiting_payment' and coalesce(archived,0)=0
+           and created_at <= datetime('now', ?)`,
+        `-${hours} hours`
+      );
+      return J({ count: (row && row.n) || 0, hours });
+    }
+
     // ---- OWNER: diagnostics (why didn't I get an email?) -------------------
     if (path === "/api/owner/diagnostics" && method === "GET") {
       if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
@@ -247,10 +279,15 @@ export async function onRequest(context) {
         ANET_ENV: env.ANET_ENV || "(not set)",
       };
       const counts = await db.first("select count(*) as total, sum(case when coalesce(archived,0)=1 then 1 else 0 end) as archived, sum(case when coalesce(archived,0)=0 then 1 else 0 end) as active from orders");
+      // Exactly the number the KPI shows, plus how it splits. If awaitingArchived
+      // is non-zero while awaitingActive is high, the archived flag isn't sticking.
+      const awaiting = await db.first("select sum(case when paid_at is null and coalesce(archived,0)=0 then 1 else 0 end) as awaitingActive, sum(case when paid_at is null and coalesce(archived,0)=1 then 1 else 0 end) as awaitingArchived, sum(case when paid_at is not null and coalesce(archived,0)=0 then 1 else 0 end) as paidActive from orders");
+      // How is `archived` actually stored? Text "1" and integer 1 behave differently.
+      const archivedShapes = await db.all("select archived as value, typeof(archived) as type, count(*) as n from orders group by 1, 2");
       const emailFailures = await db.all("select recipient, subject, status, error, created_at from email_log order by created_at desc limit 10");
       const webhooks = await db.all("select event_type, signature_ok, matched_order, note, created_at from webhook_log order by created_at desc limit 10");
       const unpaid = await db.all("select reference, email, total_cents, created_at from orders where method='card' and status='awaiting_payment' and coalesce(archived,0)=0 order by created_at desc limit 10");
-      return J({ backendVersion: BACKEND_VERSION, orderCounts: counts || {}, env: envCheck, emailFailures, webhooks, unpaidCardOrders: unpaid });
+      return J({ backendVersion: BACKEND_VERSION, orderCounts: counts || {}, awaiting: awaiting || {}, archivedShapes, env: envCheck, emailFailures, webhooks, unpaidCardOrders: unpaid });
     }
 
     // ---- OWNER: send a real test email and report what Resend actually said --
