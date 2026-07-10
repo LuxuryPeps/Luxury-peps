@@ -269,33 +269,33 @@ const FONTS = (
 );
 
 const BASE_PRODUCTS = [
-  { id: "p03", no: "01", name: "GLP-1 SM", form: "Lyophilized Powder", purity: "99.3%", baseMg: 10, basePrice: 90, batchPrefix: "SMG-0741" },
-  { id: "p04", no: "02", name: "GLP-2 TZ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 65, batchPrefix: "TZP-0512", sizes: [{ mg: 10, price: 65 }, { mg: 20, price: 95 }] },
-  { id: "p21", no: "03", name: "GLP-3 RT", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 80, batchPrefix: "RET-3318", sizes: [{ mg: 10, price: 80 }, { mg: 20, price: 130 }] },
-  { id: "p01", no: "04", name: "BPC-157", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 45, batchPrefix: "BPC-2206" },
-  { id: "p02", no: "05", name: "TB-500", form: "Lyophilized Powder", purity: "98.7%", baseMg: 10, basePrice: 55, batchPrefix: "TB4-1190" },
-  { id: "p29", no: "06", name: "BPC-157 + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 120, batchPrefix: "BTB-2210" },
-  { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 140, batchPrefix: "TRI-7010" },
-  { id: "p08", no: "08", name: "GHK-Cu", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 65, batchPrefix: "GHK-1075" },
-  { id: "p07", no: "09", name: "Melanotan II", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 45, batchPrefix: "MT2-8814" },
-  { id: "p28", no: "10", name: "Glutathione", form: "Lyophilized Powder", purity: "99.3%", baseMg: 1500, basePrice: 72, batchPrefix: "GLU-6004", soldOut: true },
-  { id: "p05", no: "11", name: "Ipamorelin", form: "Lyophilized Powder", purity: "99.4%", baseMg: 5, basePrice: 40, batchPrefix: "IPM-3387", sizes: [{ mg: 5, price: 40 }, { mg: 10, price: 60 }] },
-  { id: "p06", no: "12", name: "CJC-1295 (No DAC)", form: "Lyophilized Powder", purity: "98.9%", baseMg: 10, basePrice: 66, batchPrefix: "CJC-2049" },
-  { id: "p33", no: "13", name: "CJC-1295 + Ipamorelin", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 82, batchPrefix: "CJI-1205" },
-  { id: "p15", no: "14", name: "Sermorelin", form: "Lyophilized Powder", purity: "99.3%", baseMg: 10, basePrice: 60, batchPrefix: "SER-1849" },
-  { id: "p31", no: "15", name: "Tesamorelin", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 55, batchPrefix: "TES-0470", sizes: [{ mg: 5, price: 55 }, { mg: 10, price: 75 }] },
-  { id: "p32", no: "16", name: "IGF-1 LR3", form: "Lyophilized Powder", purity: "98.8%", baseMg: 1, basePrice: 85, batchPrefix: "IGF-0190" },
-  { id: "p09", no: "17", name: "Epithalon", form: "Lyophilized Powder", purity: "99.5%", baseMg: 10, basePrice: 61, batchPrefix: "EPI-6203" },
-  { id: "p19", no: "18", name: "MOTS-c", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 49, batchPrefix: "MOT-2786" },
-  { id: "p24", no: "19", name: "SS-31", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 80, batchPrefix: "SS3-1041" },
-  { id: "p22", no: "20", name: "NAD+", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 60, batchPrefix: "NAD-5500" },
-  { id: "p25", no: "21", name: "VIP", form: "Lyophilized Powder", purity: "98.8%", baseMg: 10, basePrice: 70, batchPrefix: "VIP-3360" },
-  { id: "p11", no: "22", name: "Selank", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 39, batchPrefix: "SEL-7732" },
-  { id: "p12", no: "23", name: "Semax", form: "Lyophilized Powder", purity: "99.2%", baseMg: 5, basePrice: 40, batchPrefix: "SMX-2298" },
-  { id: "p23", no: "24", name: "Oxytocin Acetate", form: "Lyophilized Powder", purity: "98.9%", baseMg: 2, basePrice: 54, batchPrefix: "OXY-2208", soldOut: true },
-  { id: "p26", no: "25", name: "5-Amino-1MQ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 70, batchPrefix: "5AM-1099" },
-  { id: "p30", no: "26", name: "HCG", form: "Lyophilized Powder", purity: "98.5%", baseMg: 10000, basePrice: 95, batchPrefix: "HCG-1000", unit: "IU", soldOut: true },
-  { id: "p27", no: "27", name: "Bacteriostatic Water", form: "0.9% Benzyl Alcohol Solution", purity: "USP-Grade", baseMg: 10, basePrice: 15, batchPrefix: "BAC-3001", unit: "mL", container: "vial" },
+  { id: "p03", no: "01", name: "GLP-1 SM", form: "Lyophilized Powder", purity: "99.3%", baseMg: 10, basePrice: 89.99, batchPrefix: "SMG-0741" },
+  { id: "p04", no: "02", name: "GLP-2 TZ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 64.99, batchPrefix: "TZP-0512", sizes: [{ mg: 10, price: 64.99 }, { mg: 20, price: 94.99 }] },
+  { id: "p21", no: "03", name: "GLP-3 RT", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 79.99, batchPrefix: "RET-3318", sizes: [{ mg: 10, price: 79.99 }, { mg: 20, price: 129.99 }] },
+  { id: "p01", no: "04", name: "BPC-157", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 44.99, batchPrefix: "BPC-2206" },
+  { id: "p02", no: "05", name: "TB-500", form: "Lyophilized Powder", purity: "98.7%", baseMg: 10, basePrice: 54.99, batchPrefix: "TB4-1190" },
+  { id: "p29", no: "06", name: "BPC-157 + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 119.99, batchPrefix: "BTB-2210" },
+  { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 139.99, batchPrefix: "TRI-7010" },
+  { id: "p08", no: "08", name: "GHK-Cu", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 64.99, batchPrefix: "GHK-1075" },
+  { id: "p07", no: "09", name: "Melanotan II", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 44.99, batchPrefix: "MT2-8814" },
+  { id: "p28", no: "10", name: "Glutathione", form: "Lyophilized Powder", purity: "99.3%", baseMg: 1500, basePrice: 71.99, batchPrefix: "GLU-6004", soldOut: true },
+  { id: "p05", no: "11", name: "Ipamorelin", form: "Lyophilized Powder", purity: "99.4%", baseMg: 5, basePrice: 39.99, batchPrefix: "IPM-3387", sizes: [{ mg: 5, price: 39.99 }, { mg: 10, price: 59.99 }] },
+  { id: "p06", no: "12", name: "CJC-1295 (No DAC)", form: "Lyophilized Powder", purity: "98.9%", baseMg: 10, basePrice: 65.99, batchPrefix: "CJC-2049" },
+  { id: "p33", no: "13", name: "CJC-1295 + Ipamorelin", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 81.99, batchPrefix: "CJI-1205" },
+  { id: "p15", no: "14", name: "Sermorelin", form: "Lyophilized Powder", purity: "99.3%", baseMg: 10, basePrice: 59.99, batchPrefix: "SER-1849" },
+  { id: "p31", no: "15", name: "Tesamorelin", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 54.99, batchPrefix: "TES-0470", sizes: [{ mg: 5, price: 54.99 }, { mg: 10, price: 74.99 }] },
+  { id: "p32", no: "16", name: "IGF-1 LR3", form: "Lyophilized Powder", purity: "98.8%", baseMg: 1, basePrice: 84.99, batchPrefix: "IGF-0190" },
+  { id: "p09", no: "17", name: "Epithalon", form: "Lyophilized Powder", purity: "99.5%", baseMg: 10, basePrice: 60.99, batchPrefix: "EPI-6203" },
+  { id: "p19", no: "18", name: "MOTS-c", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 48.99, batchPrefix: "MOT-2786" },
+  { id: "p24", no: "19", name: "SS-31", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 79.99, batchPrefix: "SS3-1041" },
+  { id: "p22", no: "20", name: "NAD+", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 59.99, batchPrefix: "NAD-5500" },
+  { id: "p25", no: "21", name: "VIP", form: "Lyophilized Powder", purity: "98.8%", baseMg: 10, basePrice: 69.99, batchPrefix: "VIP-3360" },
+  { id: "p11", no: "22", name: "Selank", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 38.99, batchPrefix: "SEL-7732" },
+  { id: "p12", no: "23", name: "Semax", form: "Lyophilized Powder", purity: "99.2%", baseMg: 5, basePrice: 39.99, batchPrefix: "SMX-2298" },
+  { id: "p23", no: "24", name: "Oxytocin Acetate", form: "Lyophilized Powder", purity: "98.9%", baseMg: 2, basePrice: 53.99, batchPrefix: "OXY-2208", soldOut: true },
+  { id: "p26", no: "25", name: "5-Amino-1MQ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 69.99, batchPrefix: "5AM-1099" },
+  { id: "p30", no: "26", name: "HCG", form: "Lyophilized Powder", purity: "98.5%", baseMg: 10000, basePrice: 94.99, batchPrefix: "HCG-1000", unit: "IU", soldOut: true },
+  { id: "p27", no: "27", name: "Bacteriostatic Water", form: "0.9% Benzyl Alcohol Solution", purity: "USP-Grade", baseMg: 10, basePrice: 14.99, batchPrefix: "BAC-3001", unit: "mL", container: "vial" },
 ];
 
 // Each compound is offered in three vial sizes, generated from a base size/price
@@ -416,25 +416,38 @@ function qtyDiscountPct(qty) {
 }
 
 // Free shipping threshold (USD).
+// Money helpers. Prices are whole dollars in the catalog, but every total must
+// be computed in CENTS so the figures on screen match priceOrder() on the server.
+// Rounding in dollars produced a real bug: 2 x $45 with the 5% volume break
+// displayed $86.00 while the card was charged $85.50.
+const centsOf = (dollars) => Math.round(Number(dollars) * 100);
+const lineCentsFor = (dollars, qty) => Math.round(centsOf(dollars) * qty * (1 - qtyDiscountPct(qty)));
+const unitCentsFor = (dollars, pct) => Math.round(centsOf(dollars) * (1 - pct));
+const usd2 = (dollars) => Number(dollars).toFixed(2);      // 45      -> "45.00"
+const cents2 = (cents) => (Number(cents) / 100).toFixed(2); // 8550   -> "85.50"
+
 const FREE_SHIP_THRESHOLD = 150;
 const FLAT_SHIP = 12;
 
-// Pre-built bundle / stack kits (priced below the sum of their standard vials).
+// Pre-built bundle / stack kits. These are a convenience only: adding a kit
+// puts each vial in the cart at its normal price. No bundle-level discount.
 const BUNDLES = [
   { id: "b1", name: "Recovery Stack", tagline: "Soft-tissue & healing research pairing.",
-    items: ["p01", "p02"], discountPct: 0.15 },
+    items: ["p01", "p02"] },
   { id: "b2", name: "GH Secretagogue Stack", tagline: "Classic GHRH + GHRP research combination.",
-    items: ["p05", "p06"], discountPct: 0.15 },
+    items: ["p05", "p06"] },
   { id: "b3", name: "Metabolic Research Kit", tagline: "Leading GLP-1 class compounds, together.",
-    items: ["p03", "p04"], discountPct: 0.12 },
+    items: ["p03", "p04"] },
   { id: "b4", name: "Longevity Trio", tagline: "Epithalon, MOTS-c, and NAD+.",
-    items: ["p09", "p19", "p22"], discountPct: 0.18 },
+    items: ["p09", "p19", "p22"] },
 ];
+// Kits are a convenience: one tap adds every vial at its normal price. There is
+// no bundle-level discount — the cards previously advertised one that checkout
+// never applied, which meant charging more than the price shown.
 function bundlePricing(bundle) {
   const prods = bundle.items.map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean);
-  const full = prods.reduce((s, p) => s + p.variants[0].price, 0);
-  const price = Math.round(full * (1 - bundle.discountPct));
-  return { prods, full, price, saved: full - price };
+  const fullCents = prods.reduce((s, p) => s + centsOf(p.variants[0].price), 0);
+  return { prods, fullCents };
 }
 
 // ── Apparel / merch ───────────────────────────────────────────────────────
@@ -1183,14 +1196,14 @@ function Home({ setPage, addToCart }) {
       <section style={{ maxWidth: 1600, margin: "0 auto", padding: "0 28px 110px" }}>
         <hr className="lp-hairline" style={{ marginBottom: 50 }} />
         <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Curated Stacks</div>
-        <h2 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 8 }}>Bundle kits, priced to save</h2>
+        <h2 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 8 }}>Bundle kits</h2>
         <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 36, maxWidth: 560 }}>
-          Pre-built research stacks that pair commonly studied compounds together — each priced below the
-          sum of its individual vials.
+          Pre-built research stacks that pair commonly studied compounds together — add every vial to your
+          cart in a single tap. Volume pricing still applies automatically when you order multiples of a vial.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 22 }}>
           {BUNDLES.map((b) => {
-            const { prods, full, price, saved } = bundlePricing(b);
+            const { prods, fullCents } = bundlePricing(b);
             const added = addedBundle === b.id;
             return (
               <div key={b.id} className="lp-card" style={{ padding: 22, display: "flex", flexDirection: "column" }}>
@@ -1201,7 +1214,7 @@ function Home({ setPage, addToCart }) {
                     </div>
                   ))}
                   <span style={{ marginLeft: "auto", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--bg)", background: "var(--gold)", padding: "3px 8px", fontWeight: 600, alignSelf: "flex-start" }}>
-                    Save ${saved}
+                    {prods.length} vials
                   </span>
                 </div>
                 <div className="lp-serif" style={{ fontSize: 21, marginBottom: 6 }}>{b.name}</div>
@@ -1211,8 +1224,7 @@ function Home({ setPage, addToCart }) {
                 </div>
                 <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <span style={{ color: "var(--gold-bright)", fontSize: 18 }}>${price}</span>
-                    <span style={{ fontSize: 13, color: "var(--muted)", textDecoration: "line-through", marginLeft: 8 }}>${full}</span>
+                    <span style={{ color: "var(--gold-bright)", fontSize: 18 }}>${cents2(fullCents)}</span>
                   </div>
                   <button className="lp-btn" style={{ padding: "9px 14px", fontSize: 11, display: "flex", alignItems: "center", gap: 5 }} onClick={() => addBundle(b)}>
                     {added ? <><Check size={12} /> Added</> : <><Plus size={12} /> Add Kit</>}
@@ -1302,7 +1314,7 @@ function ApparelCard({ item, addToCart }) {
           })}
         </div>
         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ color: "var(--gold-bright)", fontSize: 16 }}>${item.price}</span>
+          <span style={{ color: "var(--gold-bright)", fontSize: 16 }}>${usd2(item.price)}</span>
           <button className="lp-btn lp-btn-solid" onClick={add} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
             {added ? <><Check size={12} /> Added</> : (pre ? <><Plus size={12} /> Pre-order</> : <><Plus size={12} /> Add</>)}
           </button>
@@ -1416,7 +1428,7 @@ function ApparelDetail({ item, addToCart }) {
         <div className="lp-eyebrow" style={{ marginBottom: 10 }}>{item.garment === "tee" ? "Heavyweight Tee" : "Apparel"}</div>
         <h3 className="lp-serif" style={{ fontSize: 30, marginBottom: 14 }}>{item.name}</h3>
         <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.7, marginBottom: 22, maxWidth: 460 }}>{item.blurb}</p>
-        <div className="lp-serif" style={{ color: "var(--gold-bright)", fontSize: 24, marginBottom: 24 }}>${item.price}</div>
+        <div className="lp-serif" style={{ color: "var(--gold-bright)", fontSize: 24, marginBottom: 24 }}>${usd2(item.price)}</div>
         <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Size</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {item.variants.map((v) => {
@@ -1428,7 +1440,7 @@ function ApparelDetail({ item, addToCart }) {
         </div>
         <SizeGuide />
         <button className="lp-btn lp-btn-solid" onClick={add} style={{ marginTop: 24, fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 7, padding: "13px 26px" }}>
-          {added ? <><Check size={15} /> Added to cart</> : (pre ? <><Plus size={15} /> Pre-order — ${item.price}</> : <><Plus size={15} /> Add to cart — ${item.price}</>)}
+          {added ? <><Check size={15} /> Added to cart</> : (pre ? <><Plus size={15} /> Pre-order — ${usd2(item.price)}</> : <><Plus size={15} /> Add to cart — ${item.price}</>)}
         </button>
         {pre && (
           <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 7 }}>
@@ -1706,10 +1718,10 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
           </button>
           )}
           <p style={{ color: "var(--gold-bright)", fontSize: 22, marginBottom: 24, display: "flex", alignItems: "baseline", gap: 10 }}>
-            ${Math.round(variant.price * (1 - qtyDiscountPct(qty)))}
+            ${cents2(unitCentsFor(variant.price, qtyDiscountPct(qty)))}
             {qtyDiscountPct(qty) > 0 && (
               <>
-                <span style={{ fontSize: 15, color: "var(--muted)", textDecoration: "line-through" }}>${variant.price}</span>
+                <span style={{ fontSize: 15, color: "var(--muted)", textDecoration: "line-through" }}>${usd2(variant.price)}</span>
                 <span style={{ fontSize: 12, color: "var(--gold)" }}>−{Math.round(qtyDiscountPct(qty) * 100)}% volume</span>
               </>
             )}
@@ -1742,7 +1754,7 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {[{ min: 1, pct: 0 }, ...QTY_BREAKS].sort((a, b) => a.min - b.min).map((b, i, arr) => {
                 const active = qty >= b.min && (i === arr.length - 1 || qty < arr[i + 1].min);
-                const unit = Math.round(variant.price * (1 - b.pct));
+                const unitC = unitCentsFor(variant.price, b.pct);
                 return (
                   <div key={b.min} style={{
                     flex: "1 1 80px", textAlign: "center", padding: "10px 8px",
@@ -1750,7 +1762,7 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
                     background: active ? "var(--brown-deep)" : "transparent",
                   }}>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>{b.min}+ {b.min === 1 ? "vial" : "vials"}</div>
-                    <div style={{ fontSize: 14, color: active ? "var(--gold-bright)" : "var(--cream)" }}>${unit}</div>
+                    <div style={{ fontSize: 14, color: active ? "var(--gold-bright)" : "var(--cream)" }}>${cents2(unitC)}</div>
                     {b.pct > 0 && <div style={{ fontSize: 10, color: "var(--gold)" }}>save {Math.round(b.pct * 100)}%</div>}
                   </div>
                 );
@@ -1861,7 +1873,7 @@ function ComparePage({ setPage, openProduct }) {
     { label: "Form", get: (p) => p.form },
     { label: "Purity (HPLC)", get: (p) => p.purity },
     { label: "Sizes", get: (p) => p.variants.map((v) => v.size.replace(/ \/ (vial|bottle)/, "")).join(", ") },
-    { label: "From", get: (p) => `$${minPrice(p)}` },
+    { label: "From", get: (p) => `$${usd2(minPrice(p))}` },
 
   ];
 
@@ -2129,7 +2141,7 @@ function CrossSellStrip({ cart, addToCart, heading, subheading }) {
                 <div className="lp-serif" style={{ fontSize: 16, marginBottom: 3 }}>{p.name}</div>
                 <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 14 }}>{p.variants[0].size.replace(" / vial", "")} · {p.purity}</div>
                 <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ color: "var(--gold-bright)", fontSize: 14 }}>${price}</span>
+                  <span style={{ color: "var(--gold-bright)", fontSize: 14 }}>${usd2(price)}</span>
                   <button
                     onClick={() => quickAdd(p)}
                     disabled={isSoldOut(p)}
@@ -2161,12 +2173,14 @@ function Cart({ cart, setPage, updateQty, removeItem, addToCart }) {
   );
   const lineOf = (i) => {
     const pct = qtyDiscountPct(i.qty);
-    const full = i.variant.price * i.qty;
-    return { pct, full, total: Math.round(full * (1 - pct)) };
+    const fullCents = centsOf(i.variant.price) * i.qty;
+    return { pct, fullCents, totalCents: lineCentsFor(i.variant.price, i.qty) };
   };
-  const subtotal = items.reduce((sum, i) => sum + lineOf(i).total, 0);
-  const fullSubtotal = items.reduce((sum, i) => sum + i.variant.price * i.qty, 0);
-  const volumeSaved = fullSubtotal - subtotal;
+  const subtotalCents = items.reduce((sum, i) => sum + lineOf(i).totalCents, 0);
+  const subtotal = subtotalCents / 100;
+  const fullSubtotalCents = items.reduce((sum, i) => sum + centsOf(i.variant.price) * i.qty, 0);
+  const fullSubtotal = fullSubtotalCents / 100;
+  const volumeSavedCents = fullSubtotalCents - subtotalCents;
   const remaining = Math.max(0, FREE_SHIP_THRESHOLD - subtotal);
   const shipProgress = Math.min(100, (subtotal / FREE_SHIP_THRESHOLD) * 100);
 
@@ -2204,7 +2218,7 @@ function Cart({ cart, setPage, updateQty, removeItem, addToCart }) {
               <button onClick={() => updateQty(i.id, i.variantId, i.qty + 1)} style={{ background: "none", border: "none", color: "var(--cream)", padding: "8px 12px", cursor: "pointer" }}><Plus size={12} /></button>
             </div>
             <div style={{ width: 80, textAlign: "right" }}>
-              <div style={{ color: "var(--gold-bright)" }}>${lineOf(i).total}</div>
+              <div style={{ color: "var(--gold-bright)" }}>${cents2(lineOf(i).totalCents)}</div>
               {lineOf(i).pct > 0 && (
                 <div style={{ fontSize: 10, color: "var(--gold)" }}>−{Math.round(lineOf(i).pct * 100)}%</div>
               )}
@@ -2216,7 +2230,7 @@ function Cart({ cart, setPage, updateQty, removeItem, addToCart }) {
       <div style={{ marginTop: 28, padding: "16px 18px", border: "1px solid var(--line)", background: "var(--panel)" }}>
         {remaining > 0 ? (
           <div style={{ fontSize: 13, color: "var(--cream)", marginBottom: 10 }}>
-            Add <span style={{ color: "var(--gold-bright)" }}>${remaining}</span> more to unlock free shipping.
+            Add <span style={{ color: "var(--gold-bright)" }}>${usd2(remaining)}</span> more to unlock free shipping.
           </div>
         ) : (
           <div style={{ fontSize: 13, color: "var(--gold-bright)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
@@ -2230,17 +2244,17 @@ function Cart({ cart, setPage, updateQty, removeItem, addToCart }) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
         <div style={{ width: 280 }}>
-          {volumeSaved > 0 && (
+          {volumeSavedCents > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14 }}>
-              <span style={{ color: "var(--gold)" }}>Volume savings</span><span style={{ color: "var(--gold)" }}>−${volumeSaved}</span>
+              <span style={{ color: "var(--gold)" }}>Volume savings</span><span style={{ color: "var(--gold)" }}>−${cents2(volumeSavedCents)}</span>
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14 }}>
-            <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${subtotal}</span>
+            <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${cents2(subtotalCents)}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, fontSize: 14 }}>
             <span style={{ color: "var(--muted)" }}>Shipping</span>
-            <span>{remaining > 0 ? `$${FLAT_SHIP}` : "Free"}</span>
+            <span>{remaining > 0 ? `$${usd2(FLAT_SHIP)}` : "Free"}</span>
           </div>
           <button className="lp-btn lp-btn-solid" style={{ width: "100%" }} onClick={() => setPage("checkout")}>
             Proceed to Checkout
@@ -2316,7 +2330,7 @@ function Checkout({ cart, setPage, addToCart }) {
       .filter((c) => c.product && c.variant),
     [cart]
   );
-  const subtotal = items.reduce((sum, i) => sum + Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))), 0);
+  const subtotal = items.reduce((sum, i) => sum + lineCentsFor(i.variant.price, i.qty), 0) / 100;
   const shipping = subtotal === 0 ? 0 : (subtotal >= FREE_SHIP_THRESHOLD ? 0 : FLAT_SHIP);
   const [form, setForm] = useState({ name: "", email: "", address: "", city: "", state: "", zip: "", country: "" });
   const [certified, setCertified] = useState(false);
@@ -2450,7 +2464,7 @@ function Checkout({ cart, setPage, addToCart }) {
       return;
     }
     const summary = {
-      items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))) })),
+      items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: lineCentsFor(i.variant.price, i.qty) / 100 })),
       subtotal, creatorDiscount, promoDiscount, shipping: shippingDue, total: usd(totalCents),
       code: appliedCode ? appliedCode.code : null,
       promo: appliedPromo ? appliedPromo.code : null,
@@ -2485,7 +2499,7 @@ function Checkout({ cart, setPage, addToCart }) {
     setErrorMsg("");
     saveInfo();
     const summary = {
-      items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: Math.round(i.variant.price * i.qty * (1 - qtyDiscountPct(i.qty))) })),
+      items: items.map((i) => ({ name: i.product.name, size: i.variant.size, qty: i.qty, line: lineCentsFor(i.variant.price, i.qty) / 100 })),
       subtotal, creatorDiscount, promoDiscount, shipping: shippingDue, total: usd(totalCents),
       code: appliedCode ? appliedCode.code : null,
       promo: appliedPromo ? appliedPromo.code : null,
@@ -2707,11 +2721,11 @@ function Checkout({ cart, setPage, addToCart }) {
           <div style={{ border: "1px solid var(--line)", padding: 20 }}>
             {items.map((i) => {
               const pct = qtyDiscountPct(i.qty);
-              const lineTotal = Math.round(i.variant.price * i.qty * (1 - pct));
+              const lineTotalCents = lineCentsFor(i.variant.price, i.qty);
               return (
                 <div key={`${i.id}_${i.variantId}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 10 }}>
                   <span>{i.product.name} ({i.variant.size.replace(" / vial", "")}) × {i.qty}{pct > 0 ? ` · −${Math.round(pct * 100)}%` : ""}</span>
-                  <span>${lineTotal}</span>
+                  <span>${cents2(lineTotalCents)}</span>
                 </div>
               );
             })}
@@ -2748,7 +2762,7 @@ function Checkout({ cart, setPage, addToCart }) {
             )}
 
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8 }}>
-              <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${subtotal}</span>
+              <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${usd2(subtotal)}</span>
             </div>
             {promoDiscount > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, color: "var(--gold-bright)" }}>
@@ -2761,7 +2775,7 @@ function Checkout({ cart, setPage, addToCart }) {
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 14 }}>
-              <span style={{ color: "var(--muted)" }}>Shipping</span><span>{shippingDue === 0 ? "Free" : `$${shippingDue}`}</span>
+              <span style={{ color: "var(--muted)" }}>Shipping</span><span>{shippingDue === 0 ? "Free" : `$${usd2(shippingDue)}`}</span>
             </div>
             <hr className="lp-hairline" style={{ margin: "14px 0" }} />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, color: "var(--gold-bright)" }}>
@@ -6046,7 +6060,7 @@ function ChatWidget() {
 
   // Compact catalog context the model can answer from.
   const catalogContext = PRODUCTS.map(
-    (p) => `${p.name} (No.${p.no}, ${p.purity} HPLC, ${p.category}) — sizes: ${p.variants.map((v) => `${v.size.replace(" / vial", "")} $${v.price}`).join(", ")}`
+    (p) => `${p.name} (No.${p.no}, ${p.purity} HPLC, ${p.category}) — sizes: ${p.variants.map((v) => `${v.size.replace(" / vial", "")} $${usd2(v.price)}`).join(", ")}`
   ).join("\n");
 
   const SYSTEM = `You are the customer-support assistant for Luxury Peps, a store selling reference-grade research peptides for LABORATORY RESEARCH USE ONLY.
