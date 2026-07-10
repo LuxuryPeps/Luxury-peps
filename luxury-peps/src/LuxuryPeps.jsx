@@ -2459,6 +2459,22 @@ function Checkout({ cart, setPage, addToCart }) {
       placedAt: new Date().toISOString(),
     };
     const placedOrder = { reference: ref || ("LP-" + Date.now().toString(36).toUpperCase()), status: "Paid", ...summary };
+
+    // Backup confirmation. Authorize.Net's webhook normally marks the order paid,
+    // but if it's slow, retrying, or disabled, this tells our server to verify the
+    // transaction directly with Authorize.Net. The server re-checks the amount and
+    // invoice against Authorize.Net itself — nothing here is taken on trust. If it
+    // fails, the customer has still paid, so never block the success screen.
+    if (BACKEND_LIVE && ref && resp.transId) {
+      try {
+        await fetch(API_BASE + "/api/anet/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference: ref, transId: String(resp.transId) }),
+        });
+      } catch (_) { /* webhook remains the backstop */ }
+    }
+
     try { await window.storage.set("lastOrder", JSON.stringify(placedOrder), false); } catch (_) {}
     await saveOrderToHistory(placedOrder);
     setPage("success");
@@ -4117,6 +4133,8 @@ function OwnerPortal({ setPage }) {
   const [promoForm, setPromoForm] = useState({ code: "", kind: "pct", value: "", expiresAt: "", maxUses: "" });
   const [promoMsg, setPromoMsg] = useState("");
   const [pendingReviews, setPendingReviews] = useState([]);
+  const [diag, setDiag] = useState(null);
+  const [testEmailResult, setTestEmailResult] = useState("");
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -4274,6 +4292,22 @@ function OwnerPortal({ setPage }) {
 
   const signOut = () => { setAuthed(false); setPin(""); setData(null); setError(""); setSampleMode(false); try { window.storage.delete("owner:auth", false); } catch (_) { /* ignore */ } };
 
+  const loadDiagnostics = async () => {
+    if (!live) return;
+    setDiag("loading");
+    try {
+      const r = await fetch(API_BASE + "/api/owner/diagnostics?pin=" + encodeURIComponent(pin));
+      setDiag(r.ok ? await r.json() : null);
+    } catch (_) { setDiag(null); }
+  };
+  const sendTestEmail = async () => {
+    setTestEmailResult("Sending…");
+    try {
+      const r = await fetch(API_BASE + "/api/owner/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+      const d = await r.json().catch(() => ({}));
+      setTestEmailResult(d.ok ? `Accepted by Resend for ${d.to} — check that inbox (and spam).` : `FAILED (${d.status || "?"}): ${d.error || "unknown error"}`);
+    } catch (_) { setTestEmailResult("Couldn't reach the server."); }
+  };
   const loadReviews = async (p) => {
     if (!live) return;
     try { const r = await fetch(API_BASE + "/api/owner/reviews?status=pending&pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setPendingReviews(d.reviews || []); } } catch (_) { /* ignore */ }
@@ -4647,6 +4681,56 @@ function OwnerPortal({ setPage }) {
           </div>
         );
       })()}
+
+      {/* Diagnostics */}
+      {live && (
+        <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+            <AlertCircle size={14} color="var(--gold-bright)" />
+            <div className="lp-eyebrow">Diagnostics</div>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Check email delivery and Authorize.Net webhook health.</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <button className="lp-btn" onClick={loadDiagnostics} style={{ fontSize: 11.5 }}>Run check</button>
+            <button className="lp-btn lp-btn-solid" onClick={sendTestEmail} style={{ fontSize: 11.5 }}>Send test email</button>
+          </div>
+          {testEmailResult && <p style={{ fontSize: 12, color: testEmailResult.startsWith("FAILED") ? "#c98a6c" : "var(--gold-bright)", marginBottom: 12, lineHeight: 1.6 }}>{testEmailResult}</p>}
+
+          {diag === "loading" && <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Checking…</p>}
+          {diag && diag !== "loading" && (
+            <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
+              <div className="lp-eyebrow" style={{ marginBottom: 6 }}>Settings</div>
+              <div style={{ color: "var(--muted)" }}>
+                Owner email: <span style={{ color: diag.env.OWNER_EMAIL === "(NOT SET)" ? "#c98a6c" : "var(--cream)" }}>{diag.env.OWNER_EMAIL}</span><br />
+                From address: <span style={{ color: "var(--cream)" }}>{diag.env.FROM_EMAIL}</span><br />
+                Resend key: <span style={{ color: diag.env.RESEND_API_KEY ? "var(--cream)" : "#c98a6c" }}>{diag.env.RESEND_API_KEY ? "set" : "MISSING"}</span> · Signature key: <span style={{ color: diag.env.ANET_SIGNATURE_KEY ? "var(--cream)" : "#c98a6c" }}>{diag.env.ANET_SIGNATURE_KEY ? "set" : "MISSING"}</span>
+              </div>
+
+              <div className="lp-eyebrow" style={{ margin: "14px 0 6px" }}>Recent webhook deliveries</div>
+              {(diag.webhooks || []).length === 0 ? <p style={{ color: "var(--muted)" }}>None received yet.</p> : diag.webhooks.map((w, i) => (
+                <div key={i} style={{ color: "var(--muted)" }}>
+                  <span style={{ color: w.signature_ok ? "var(--gold-bright)" : "#c98a6c" }}>{w.signature_ok ? "✓" : "✗"}</span>{" "}
+                  {w.event_type || "(no type)"} {w.matched_order ? `· ${w.matched_order}` : ""} {w.note ? `· ${w.note}` : ""} <span style={{ fontSize: 11 }}>{String(w.created_at).slice(5, 16)}</span>
+                </div>
+              ))}
+
+              <div className="lp-eyebrow" style={{ margin: "14px 0 6px" }}>Failed emails</div>
+              {(diag.emailFailures || []).length === 0 ? <p style={{ color: "var(--muted)" }}>None. </p> : diag.emailFailures.map((e, i) => (
+                <div key={i} style={{ color: "#c98a6c" }}>{e.recipient} · {e.status} · {e.error}</div>
+              ))}
+
+              {(diag.unpaidCardOrders || []).length > 0 && (
+                <>
+                  <div className="lp-eyebrow" style={{ margin: "14px 0 6px" }}>Card orders never confirmed paid</div>
+                  {diag.unpaidCardOrders.map((o) => (
+                    <div key={o.reference} style={{ color: "#c98a6c" }}>{o.reference} · {money(o.total_cents)} · {String(o.created_at).slice(0, 10)}</div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Reviews awaiting approval */}
       {live && pendingReviews.length > 0 && (
