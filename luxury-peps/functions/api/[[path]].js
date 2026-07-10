@@ -18,6 +18,14 @@ const VARIANTS = {"p03-A":{"name":"GLP-1 SM","cents":9000},"p04-A":{"name":"GLP-
 const QTY_BREAKS = [{ min: 5, pct: 0.15 }, { min: 3, pct: 0.10 }, { min: 2, pct: 0.05 }];
 const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) return b.pct; return 0; };
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
+// Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
+// which version of the backend is actually deployed.
+const BACKEND_VERSION = "2026-07-09.2";
+// Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
+// fall back to the business address so a missing variable can never silently
+// swallow order, contact, application, payout, and review notifications.
+const OWNER_EMAIL_FALLBACK = "hello@luxurypeps.com";
+const ownerEmail = (env) => (env.OWNER_EMAIL || "").trim() || OWNER_EMAIL_FALLBACK;
 const METHOD_LABEL = { bank: "Bank transfer", cashapp: "Cash App", zelle: "Zelle", crypto: "Crypto (USDC)" };
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -131,7 +139,7 @@ async function sendCardOrderEmails(env, db, order) {
   const custName = cust.name || order.email || "Customer";
   const rowsHtml = items.map((l) => `<tr><td style="padding:4px 10px 4px 0">${esc(l.name)}</td><td style="padding:4px 10px;color:#888">×${l.qty}</td><td style="padding:4px 0;text-align:right">$${((l.line_cents || 0) / 100).toFixed(2)}</td></tr>`).join("");
   const table = `<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${rowsHtml}<tr><td colspan="2" style="padding-top:8px;font-weight:bold">Total</td><td style="padding-top:8px;text-align:right;font-weight:bold">${totalStr}</td></tr></table>`;
-  await sendEmail(env, { to: env.OWNER_EMAIL || "", subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
+  await sendEmail(env, { to: ownerEmail(env), subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
   if (order.email) await sendEmail(env, { to: order.email, subject: `Your Luxury Peps order ${order.reference}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">Thank you for your order</h2><p>Your payment was received. Order <b>${order.reference}</b> — total <b>${totalStr}</b>.</p>${table}<p>Your order ships shortly. We'll be in touch with tracking.</p></div>` }, db);
 }
 
@@ -213,7 +221,7 @@ export async function onRequest(context) {
   const OWNER_PIN = env.OWNER_PIN || "";
   const APP_SECRET = env.APP_SECRET || "change-me";
   const PREORDER = (env.PREORDER || "true").toLowerCase() !== "false";
-  const OWNER_EMAIL = env.OWNER_EMAIL || "";
+  const OWNER_EMAIL = ownerEmail(env);
   const PAY = { bank: env.PAY_BANK || "", cashapp: env.PAY_CASHAPP || "", zelle: env.PAY_ZELLE || "", crypto: env.PAY_CRYPTO || "" };
   const ownerOK = (pin) => OWNER_PIN && String(pin || "").trim() === OWNER_PIN;
 
@@ -231,22 +239,24 @@ export async function onRequest(context) {
       const envCheck = {
         RESEND_API_KEY: !!env.RESEND_API_KEY,
         FROM_EMAIL: env.FROM_EMAIL || "(default) orders@luxurypeps.com",
-        OWNER_EMAIL: env.OWNER_EMAIL || "(NOT SET)",
+        OWNER_EMAIL: ownerEmail(env),
+        OWNER_EMAIL_from_env: !!(env.OWNER_EMAIL || "").trim(),
         ANET_API_LOGIN_ID: !!env.ANET_API_LOGIN_ID,
         ANET_TRANSACTION_KEY: !!env.ANET_TRANSACTION_KEY,
         ANET_SIGNATURE_KEY: !!env.ANET_SIGNATURE_KEY,
         ANET_ENV: env.ANET_ENV || "(not set)",
       };
+      const counts = await db.first("select count(*) as total, sum(case when coalesce(archived,0)=1 then 1 else 0 end) as archived, sum(case when coalesce(archived,0)=0 then 1 else 0 end) as active from orders");
       const emailFailures = await db.all("select recipient, subject, status, error, created_at from email_log order by created_at desc limit 10");
       const webhooks = await db.all("select event_type, signature_ok, matched_order, note, created_at from webhook_log order by created_at desc limit 10");
       const unpaid = await db.all("select reference, email, total_cents, created_at from orders where method='card' and status='awaiting_payment' and coalesce(archived,0)=0 order by created_at desc limit 10");
-      return J({ env: envCheck, emailFailures, webhooks, unpaidCardOrders: unpaid });
+      return J({ backendVersion: BACKEND_VERSION, orderCounts: counts || {}, env: envCheck, emailFailures, webhooks, unpaidCardOrders: unpaid });
     }
 
     // ---- OWNER: send a real test email and report what Resend actually said --
     if (path === "/api/owner/test-email" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
-      const to = String(body.to || env.OWNER_EMAIL || "").trim();
+      const to = String(body.to || ownerEmail(env)).trim();
       const r = await sendEmail(env, {
         to,
         subject: "Luxury Peps — test email",
