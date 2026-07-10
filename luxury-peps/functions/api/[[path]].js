@@ -115,6 +115,15 @@ async function pbkdf2(pw, saltBytes) {
 function hexToBytes(hex) { const clean = String(hex || "").trim(); const b = new Uint8Array(Math.floor(clean.length / 2)); for (let i = 0; i < b.length; i++) b[i] = parseInt(clean.substr(i * 2, 2), 16); return b; }
 function bytesToHex(bytes) { return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(""); }
 
+// Flips an order to paid exactly once. The conditional UPDATE is the lock:
+// whichever of {webhook, browser confirm} lands first changes a row and gets
+// `true`; the loser changes nothing and must not send duplicate emails.
+async function claimOrderAsPaid(db, reference, transId) {
+  const r = await db.run("update orders set status='paid', paid_at=datetime('now'), anet_trans_id=coalesce(anet_trans_id, ?) where reference=? and status<>'paid' and status<>'shipped'", transId || null, reference);
+  const changes = (r && r.meta && typeof r.meta.changes === "number") ? r.meta.changes : 1;
+  return changes > 0;
+}
+
 async function sendCardOrderEmails(env, db, order) {
   const items = await db.all("select name, qty, line_cents from order_items where order_ref=?", order.reference);
   let cust = {}; try { cust = JSON.parse(order.customer || "{}"); } catch (_) { cust = {}; }
@@ -122,20 +131,33 @@ async function sendCardOrderEmails(env, db, order) {
   const custName = cust.name || order.email || "Customer";
   const rowsHtml = items.map((l) => `<tr><td style="padding:4px 10px 4px 0">${esc(l.name)}</td><td style="padding:4px 10px;color:#888">×${l.qty}</td><td style="padding:4px 0;text-align:right">$${((l.line_cents || 0) / 100).toFixed(2)}</td></tr>`).join("");
   const table = `<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${rowsHtml}<tr><td colspan="2" style="padding-top:8px;font-weight:bold">Total</td><td style="padding-top:8px;text-align:right;font-weight:bold">${totalStr}</td></tr></table>`;
-  await sendEmail(env, { to: env.OWNER_EMAIL || "", subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` });
-  if (order.email) await sendEmail(env, { to: order.email, subject: `Your Luxury Peps order ${order.reference}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">Thank you for your order</h2><p>Your payment was received. Order <b>${order.reference}</b> — total <b>${totalStr}</b>.</p>${table}<p>Your order ships shortly. We'll be in touch with tracking.</p></div>` });
+  await sendEmail(env, { to: env.OWNER_EMAIL || "", subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
+  if (order.email) await sendEmail(env, { to: order.email, subject: `Your Luxury Peps order ${order.reference}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">Thank you for your order</h2><p>Your payment was received. Order <b>${order.reference}</b> — total <b>${totalStr}</b>.</p>${table}<p>Your order ships shortly. We'll be in touch with tracking.</p></div>` }, db);
 }
 
-async function sendEmail(env, { to, subject, html }) {
+// Sends via Resend and REPORTS what happened. Previously every failure was
+// swallowed, so a rejected recipient or bad key looked identical to success.
+// Still never throws — email must not break a payment request.
+async function sendEmail(env, { to, subject, html }, db) {
   const key = env.RESEND_API_KEY;
-  if (!key || !to) return;
+  if (!key) return { ok: false, status: 0, error: "RESEND_API_KEY is not set" };
+  if (!to) return { ok: false, status: 0, error: "No recipient address (is OWNER_EMAIL set?)" };
+  let out;
   try {
-    await fetch("https://api.resend.com/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
       body: JSON.stringify({ from: env.FROM_EMAIL || "Luxury Peps <orders@luxurypeps.com>", to, subject, html }),
     });
-  } catch (_) { /* never let email break the request */ }
+    const bodyText = await res.text();
+    out = { ok: res.ok, status: res.status, error: res.ok ? null : bodyText.slice(0, 400) };
+  } catch (e) {
+    out = { ok: false, status: 0, error: String((e && e.message) || e).slice(0, 400) };
+  }
+  if (!out.ok && db) {
+    try { await db.run("insert into email_log (recipient, subject, status, error) values (?, ?, ?, ?)", String(to).slice(0, 120), String(subject).slice(0, 160), out.status, out.error); } catch (_) {}
+  }
+  return out;
 }
 
 // ── D1 helpers ───────────────────────────────────────────────────────────
@@ -171,10 +193,13 @@ async function ensureSchema(db) {
   await t("alter table orders add column promo_discount_cents integer not null default 0");
   await t("alter table orders add column tracking text");
   await t("alter table orders add column shipped_at text");
+  await t("alter table orders add column anet_trans_id text");
   await t("create table if not exists promos (code text primary key, kind text not null default 'pct', value integer not null default 0, active integer not null default 1, expires_at text, max_uses integer, uses integer not null default 0, created_at text not null default (datetime('now')))");
   await t("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))");
   await t("create table if not exists reviews (id integer primary key autoincrement, order_ref text not null, product_id text not null, email text not null, display_name text, rating integer not null, body text not null, status text not null default 'pending', created_at text not null default (datetime('now')), approved_at text)");
   await t("create unique index if not exists reviews_one_per_product on reviews (order_ref, product_id)");
+  await t("create table if not exists email_log (id integer primary key autoincrement, recipient text, subject text, status integer, error text, created_at text not null default (datetime('now')))");
+  await t("create table if not exists webhook_log (id integer primary key autoincrement, event_type text, signature_ok integer, matched_order text, note text, created_at text not null default (datetime('now')))");
 }
 
 // ── Router ─────────────────────────────────────────────────────────────────
@@ -199,6 +224,37 @@ export async function onRequest(context) {
   const body = method === "POST" ? await request.json().catch(() => ({})) : {};
 
   try {
+    // ---- OWNER: diagnostics (why didn't I get an email?) -------------------
+    if (path === "/api/owner/diagnostics" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      // Only booleans / presence — never echo secret values back.
+      const envCheck = {
+        RESEND_API_KEY: !!env.RESEND_API_KEY,
+        FROM_EMAIL: env.FROM_EMAIL || "(default) orders@luxurypeps.com",
+        OWNER_EMAIL: env.OWNER_EMAIL || "(NOT SET)",
+        ANET_API_LOGIN_ID: !!env.ANET_API_LOGIN_ID,
+        ANET_TRANSACTION_KEY: !!env.ANET_TRANSACTION_KEY,
+        ANET_SIGNATURE_KEY: !!env.ANET_SIGNATURE_KEY,
+        ANET_ENV: env.ANET_ENV || "(not set)",
+      };
+      const emailFailures = await db.all("select recipient, subject, status, error, created_at from email_log order by created_at desc limit 10");
+      const webhooks = await db.all("select event_type, signature_ok, matched_order, note, created_at from webhook_log order by created_at desc limit 10");
+      const unpaid = await db.all("select reference, email, total_cents, created_at from orders where method='card' and status='awaiting_payment' and coalesce(archived,0)=0 order by created_at desc limit 10");
+      return J({ env: envCheck, emailFailures, webhooks, unpaidCardOrders: unpaid });
+    }
+
+    // ---- OWNER: send a real test email and report what Resend actually said --
+    if (path === "/api/owner/test-email" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const to = String(body.to || env.OWNER_EMAIL || "").trim();
+      const r = await sendEmail(env, {
+        to,
+        subject: "Luxury Peps — test email",
+        html: `<div style="font-family:Arial,sans-serif"><p>This is a test email from your Luxury Peps backend.</p><p>If you're reading this, order notifications will reach <b>${esc(to)}</b>.</p></div>`,
+      }, db);
+      return J({ to, ...r });
+    }
+
     // ---- PUBLIC: approved reviews for one product --------------------------
     if (path.startsWith("/api/reviews/") && method === "GET") {
       const pid = path.slice("/api/reviews/".length).replace(/[^a-zA-Z0-9]/g, "");
@@ -584,29 +640,117 @@ export async function onRequest(context) {
     }
 
     // ---- CARD: Authorize.Net webhook — confirms payment server-side -----
+    // ---- Backup confirmation: verify a transaction straight with Authorize.Net
+    // The browser can only hand us a transaction id. We never trust it — we ask
+    // Authorize.Net what that transaction actually was, and check that it maps
+    // to this order, for the right amount, and really was captured.
+    if (path === "/api/anet/confirm" && method === "POST") {
+      const reference = upper(String(body.reference || "").trim());
+      const transId = String(body.transId || "").replace(/[^0-9]/g, "");
+      if (!reference || !transId) return J({ error: "Missing reference or transaction id." }, 400);
+      if (!env.ANET_API_LOGIN_ID || !env.ANET_TRANSACTION_KEY) return J({ error: "Authorize.Net API credentials not configured." }, 500);
+
+      const order = await db.first("select * from orders where reference=?", reference);
+      if (!order) return J({ error: "Unknown order." }, 404);
+      if (order.status === "paid" || order.status === "shipped") return J({ ok: true, already: true });
+
+      const apiUrl = (env.ANET_ENV === "production") ? "https://api.authorize.net/xml/v1/request.api" : "https://apitest.authorize.net/xml/v1/request.api";
+      let details;
+      try {
+        const res = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ getTransactionDetailsRequest: { merchantAuthentication: { name: env.ANET_API_LOGIN_ID, transactionKey: env.ANET_TRANSACTION_KEY }, transId } }),
+        });
+        let text = await res.text();
+        // Authorize.Net's JSON responses are prefixed with a BOM.
+        const brace = text.indexOf("{");
+        if (brace > 0) text = text.slice(brace);
+        details = JSON.parse(text);
+      } catch (e) {
+        try { await db.run("insert into webhook_log (event_type, signature_ok, matched_order, note) values ('confirm', 0, ?, ?)", reference, ("lookup failed: " + String((e && e.message) || e)).slice(0, 200)); } catch (_) {}
+        return J({ error: "Couldn't verify the transaction." }, 502);
+      }
+
+      const resultCode = details && details.messages && details.messages.resultCode;
+      const tx = details && details.transaction;
+      if (resultCode !== "Ok" || !tx) {
+        try { await db.run("insert into webhook_log (event_type, signature_ok, matched_order, note) values ('confirm', 0, ?, ?)", reference, "transaction not found at Authorize.Net"); } catch (_) {}
+        return J({ error: "Transaction not found." }, 404);
+      }
+
+      const status = String(tx.transactionStatus || "");
+      const paidStatuses = ["capturedPendingSettlement", "settledSuccessfully", "authorizedPendingCapture"];
+      const invoice = upper(String((tx.order && tx.order.invoiceNumber) || ""));
+      const amountCents = Math.round(Number(tx.authAmount || 0) * 100);
+
+      // All three must line up, or we refuse and record why.
+      const invoiceOK = invoice === reference;
+      const amountOK = amountCents === (order.total_cents || 0);
+      const statusOK = paidStatuses.includes(status);
+      if (!invoiceOK || !amountOK || !statusOK) {
+        const why = `confirm refused — status=${status} invoice=${invoice || "?"} amount=${amountCents} expected=${order.total_cents}`;
+        try { await db.run("insert into webhook_log (event_type, signature_ok, matched_order, note) values ('confirm', 0, ?, ?)", reference, why.slice(0, 200)); } catch (_) {}
+        return J({ error: "That transaction doesn't match this order." }, 409);
+      }
+
+      const claimed = await claimOrderAsPaid(db, reference, transId);
+      try { await db.run("insert into webhook_log (event_type, signature_ok, matched_order, note) values ('confirm', 1, ?, ?)", reference, ((claimed ? "confirmed via browser callback" : "already confirmed elsewhere") + ", status=" + status).slice(0, 200)); } catch (_) {}
+      if (claimed) {
+        if (context.waitUntil) context.waitUntil(sendCardOrderEmails(env, db, order));
+        else await sendCardOrderEmails(env, db, order);
+      }
+      return J({ ok: true, already: !claimed });
+    }
+
     if (path === "/api/anet/webhook" && method === "POST") {
       const raw = await request.text();
       const sigHeader = request.headers.get("x-anet-signature") || "";
+      let sigOK = true;
+      let note = "";
       if (env.ANET_SIGNATURE_KEY) {
+        sigOK = false;
         try {
           const key = await crypto.subtle.importKey("raw", hexToBytes(env.ANET_SIGNATURE_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
           const mac = await crypto.subtle.sign("HMAC", key, TE.encode(raw));
           const computed = bytesToHex(new Uint8Array(mac)).toUpperCase();
           const provided = (sigHeader.split("=")[1] || "").toUpperCase();
-          if (!provided || computed !== provided) return J({ error: "bad signature" }, 401);
-        } catch (_) { return J({ error: "signature check failed" }, 401); }
+          sigOK = !!provided && computed === provided;
+          if (!sigOK) note = provided ? "signature mismatch — check ANET_SIGNATURE_KEY" : "no x-anet-signature header";
+        } catch (e) { sigOK = false; note = "signature check threw: " + String((e && e.message) || e).slice(0, 120); }
+      } else {
+        note = "ANET_SIGNATURE_KEY not set — signature not verified";
       }
+
       let evt = null;
-      try { evt = JSON.parse(raw); } catch (_) { return J({ ok: true }); }
+      try { evt = JSON.parse(raw); } catch (_) { evt = null; }
       const type = (evt && evt.eventType) || "";
       const inv = evt && evt.payload && evt.payload.invoiceNumber;
-      if (/authcapture|priorauthcapture|capture/i.test(type) && inv) {
+      let matched = null;
+
+      if (sigOK && /authcapture|priorauthcapture|capture/i.test(type) && inv) {
         const order = await db.first("select * from orders where reference=?", inv);
-        if (order && order.status !== "paid") {
-          await db.run("update orders set status='paid', paid_at=datetime('now') where reference=?", inv);
-          await sendCardOrderEmails(env, db, order);
+        if (order) {
+          matched = inv;
+          const claimed = await claimOrderAsPaid(db, inv, String((evt.payload && evt.payload.id) || ""));
+          if (claimed) {
+            // Send the emails AFTER responding. Authorize.Net times the webhook out
+            // and disables it if we take too long, and Resend can be slow.
+            if (context.waitUntil) context.waitUntil(sendCardOrderEmails(env, db, order));
+            else await sendCardOrderEmails(env, db, order);
+          } else {
+            note = note || "already paid (duplicate delivery)";
+          }
+        } else {
+          note = note || "no order matches invoice " + inv;
         }
       }
+
+      try { await db.run("insert into webhook_log (event_type, signature_ok, matched_order, note) values (?, ?, ?, ?)", String(type).slice(0, 80), sigOK ? 1 : 0, matched, note.slice(0, 200)); } catch (_) {}
+
+      // ALWAYS 200. A non-2xx makes Authorize.Net retry and eventually mark the
+      // webhook inactive, which would silently stop card orders being marked paid.
+      // Anything suspicious is refused above and recorded in webhook_log instead.
       return J({ ok: true });
     }
 
