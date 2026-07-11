@@ -19,7 +19,7 @@ const SITE_CONFIG = {
   hours: "Mon–Fri, 9am–5pm",
   // Pre-order: flip `preorder` to false the moment stock arrives.
   preorder: true,
-  preorderShipEstimate: "4–8 days",
+  preorderShipEstimate: "3–7 days",
   effectiveDate: "June 27, 2026",
   freeShipThreshold: 150,
   flatShip: 12,
@@ -113,7 +113,41 @@ const FONTS = (
       min-height: 100vh;
     }
     .lp-root * { box-sizing: border-box; }
+
+    /* Craft details — refinement without touching layout. */
+    .lp-root {
+      -webkit-font-smoothing: antialiased;      /* crisper light-on-dark text */
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      -webkit-tap-highlight-color: transparent; /* no grey flash on mobile taps */
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      font-variant-numeric: tabular-nums;       /* prices/figures align in columns */
+    }
+    .lp-root ::selection { background: var(--gold); color: var(--bg); }
+    @media (prefers-reduced-motion: no-preference) {
+      html { scroll-behavior: smooth; }
+    }
+    /* Scrollbar tuned to the palette (vars aren't in scope on <html>, so hex). */
+    html { scrollbar-width: thin; scrollbar-color: #4A3621 #0A0705; }
+    body::-webkit-scrollbar, .lp-root ::-webkit-scrollbar { width: 11px; height: 11px; }
+    body::-webkit-scrollbar-track, .lp-root ::-webkit-scrollbar-track { background: #140F0A; }
+    body::-webkit-scrollbar-thumb, .lp-root ::-webkit-scrollbar-thumb { background: #4A3621; border: 3px solid #140F0A; border-radius: 8px; }
+    body::-webkit-scrollbar-thumb:hover, .lp-root ::-webkit-scrollbar-thumb:hover { background: #B08243; }
+
     .lp-serif { font-family: 'Fraunces', serif; }
+
+    /* Homepage hero: editorial split that stacks on mobile. */
+    .lp-hero { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+    .lp-hero-cta, .lp-hero-stats { display: flex; flex-wrap: wrap; }
+    .lp-hero-cta { gap: 14px; }
+    .lp-hero-stats { gap: 28px; align-items: flex-end; }
+    @media (max-width: 900px) {
+      .lp-hero { grid-template-columns: 1fr; gap: 42px; text-align: center; }
+      .lp-hero-cta, .lp-hero-stats { justify-content: center; }
+    }
+    .lp-trust-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+    @media (max-width: 720px) { .lp-trust-grid { grid-template-columns: 1fr; gap: 26px; text-align: center; } }
     .lp-eyebrow {
       font-family: 'Inter', sans-serif;
       letter-spacing: 0.18em;
@@ -357,8 +391,8 @@ const PRODUCT_CATEGORY = {
 };
 
 // Curated merchandising badges shown on catalog cards.
-const BESTSELLER_IDS = new Set(["p03", "p04", "p01", "p22"]);
-const NEW_IDS = new Set(["p21", "p26"]);
+const BESTSELLER_IDS = new Set(["p21", "p03", "p04", "p01", "p22"]);
+const NEW_IDS = new Set(["p26"]);
 function productBadges(p) {
   const out = [];
   if (BESTSELLER_IDS.has(p.id)) out.push("bestseller");
@@ -393,7 +427,7 @@ const PRODUCTS = BASE_PRODUCTS.map((b) => {
 });
 
 // Merchandising metadata: which compounds are best-sellers, and common research pairings.
-const BESTSELLERS = ["p01", "p03", "p04", "p05", "p08"]; // BPC-157, Semaglutide, Tirzepatide, Ipamorelin, GHK-Cu
+const BESTSELLERS = ["p01", "p03", "p04", "p05", "p08"]; // GLP-3 gets the badge only, not forced into recommendations
 const PAIRINGS = {
   p01: ["p02", "p08"],        // BPC-157 → TB-500, GHK-Cu
   p02: ["p01", "p08"],        // TB-500 → BPC-157, GHK-Cu
@@ -1149,8 +1183,11 @@ function Footer({ setPage }) {
   );
 }
 
-function Home({ setPage, addToCart }) {
+function Home({ setPage, addToCart, openProduct }) {
   const [addedBundle, setAddedBundle] = useState(null);
+  // Flagship compound used as the hero specimen. p21 (GLP-3 RT) has verified data
+  // and is not one of the spec cards flagged for correction.
+  const hero = PRODUCTS.find((p) => p.id === "p21") || PRODUCTS[0];
   const addBundle = (bundle) => {
     bundle.items.forEach((id) => {
       const prod = PRODUCTS.find((p) => p.id === id);
@@ -1162,23 +1199,65 @@ function Home({ setPage, addToCart }) {
 
   return (
     <div className="lp-fade">
-      <section style={{ maxWidth: 1600, margin: "0 auto", padding: "100px 28px 80px", textAlign: "center" }}>
-        <div className="lp-eyebrow" style={{ marginBottom: 18 }}>Reference-Grade · Batch-Tested · Catalogued</div>
-        <h1 className="lp-serif" style={{ fontSize: "clamp(40px, 7vw, 84px)", lineHeight: 1.02, fontWeight: 400, marginBottom: 24 }}>
-          Purity, <span style={{ fontStyle: "italic", color: "var(--gold)" }}>refined</span>.
-        </h1>
-        <p style={{ color: "var(--muted)", maxWidth: 540, margin: "0 auto 36px", fontSize: 16, lineHeight: 1.7 }}>
-          A curated house of laboratory peptide compounds, each batch verified for purity
-          and presented with the precision the research deserves.
-        </p>
-        <button className="lp-btn lp-btn-solid" onClick={() => setPage("shop")}>
-          Enter the Catalog
-        </button>
+      <section style={{ maxWidth: 1240, margin: "0 auto", padding: "clamp(52px, 8vw, 100px) 28px clamp(34px, 5vw, 60px)" }}>
+        <div className="lp-hero">
+          <div>
+            <div className="lp-eyebrow" style={{ marginBottom: 20 }}>Reference-Grade · HPLC-Verified · Catalogued</div>
+            <h1 className="lp-serif" style={{ fontSize: "clamp(46px, 7.2vw, 88px)", lineHeight: 0.98, fontWeight: 400, letterSpacing: "-0.015em", marginBottom: 22 }}>
+              Purity,<br /><span style={{ fontStyle: "italic", color: "var(--gold-bright)" }}>refined</span>.
+            </h1>
+            <p style={{ color: "var(--muted)", maxWidth: 468, margin: "0 0 34px", fontSize: 16.5, lineHeight: 1.75 }}>
+              A catalogued house of research peptides — every batch verified by HPLC and issued
+              with its own certificate of analysis.
+            </p>
+            <div className="lp-hero-cta" style={{ marginBottom: 42 }}>
+              <button className="lp-btn lp-btn-solid" onClick={() => setPage("shop")}>Enter the Catalog</button>
+              <button className="lp-btn" onClick={() => setPage("guide")}>The Research Guide</button>
+            </div>
+            <div className="lp-hero-stats">
+              {[[String(PRODUCTS.length), "compounds catalogued"], ["\u2265 98%", "HPLC purity"], ["Every batch", "certificate on file"]].map(([n, l], idx) => (
+                <div key={idx} style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+                  <span className="lp-serif" style={{ fontSize: 23, color: "var(--cream)" }}>{n}</span>
+                  <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.03em", marginTop: 5 }}>{l}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ position: "relative", display: "flex", justifyContent: "center" }}>
+            <div style={{ position: "absolute", inset: "-8% -4%", background: "radial-gradient(58% 52% at 50% 40%, rgba(176,130,67,0.20), transparent 72%)", pointerEvents: "none" }} />
+            <button
+              onClick={() => openProduct && openProduct(hero.id)}
+              title={"View " + hero.name}
+              style={{ position: "relative", width: "min(380px, 84vw)", background: "var(--panel)", border: "1px solid var(--line)", padding: 0, cursor: "pointer", textAlign: "left", overflow: "hidden", transition: "border-color 0.25s ease, transform 0.25s ease" }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--gold)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.transform = "none"; }}
+            >
+              <div style={{ position: "relative", aspectRatio: "4 / 5", background: "var(--panel-2)" }}>
+                <ProductImg id={hero.id} alt={hero.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}><VialIcon size={52} /></div>} />
+                <span style={{ position: "absolute", top: 12, left: 12, fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--gold-bright)", background: "rgba(10,7,5,0.72)", border: "1px solid var(--line)", padding: "5px 9px" }}>Featured Specimen</span>
+              </div>
+              <div style={{ padding: "15px 18px", borderTop: "1px solid var(--line)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+                  <span className="lp-serif" style={{ fontSize: 20, color: "var(--cream)" }}>{hero.name}</span>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>No. {hero.no}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--gold)", letterSpacing: "0.02em" }}>{hero.purity} HPLC · {hero.form.replace(" Powder", "")} · View →</div>
+              </div>
+            </button>
+          </div>
+        </div>
       </section>
 
-      <section style={{ maxWidth: 1600, margin: "0 auto", padding: "0 28px 100px" }}>
-        <hr className="lp-hairline" style={{ marginBottom: 60 }} />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 40 }}>
+      {/* Single clean dominant peak — what a high-purity compound looks like on HPLC. */}
+      <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 28px" }} aria-hidden="true">
+        <svg viewBox="0 0 1200 56" width="100%" height="44" preserveAspectRatio="none" style={{ display: "block", opacity: 0.55 }}>
+          <path d="M0 48 L475 48 L500 6 L525 48 L720 48 L735 40 L750 48 L1200 48" style={{ fill: "none", stroke: "var(--gold)", strokeWidth: 1.25 }} />
+        </svg>
+      </div>
+
+      <section style={{ maxWidth: 1240, margin: "0 auto", padding: "40px 28px 100px" }}>
+        <div className="lp-trust-grid">
           {[
             { icon: <Beaker size={20} />, t: "Verified Purity", d: "Every batch independently tested and documented before listing." },
             { icon: <ShieldCheck size={20} />, t: "Research Use Only", d: "Compounds are supplied exclusively for qualified laboratory research." },
@@ -6274,7 +6353,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
   return (
     <div className="lp-root">
       <Header page={page} setPage={setPage} cartCount={cartCount} userEmail={userEmail} onLogout={onLogout} />
-      {page === "home" && <Home setPage={setPage} addToCart={addToCart} />}
+      {page === "home" && <Home setPage={setPage} addToCart={addToCart} openProduct={openProduct} />}
       {page === "shop" && <Shop setPage={setPage} openProduct={openProduct} addToCart={addToCart} recentlyViewed={recentlyViewed} />}
       {page === "product" && <ProductDetail productId={selectedProduct} setPage={setPage} addToCart={addToCart} openProduct={openProduct} recentlyViewed={recentlyViewed} />}
       {page === "coa" && <CertificateOfAnalysis productId={selectedProduct} setPage={setPage} />}
