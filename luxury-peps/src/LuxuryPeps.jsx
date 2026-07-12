@@ -2808,6 +2808,23 @@ function Checkout({ cart, setPage, addToCart }) {
                 </div>
               );
             })}
+
+            {(() => {
+              const bac = PRODUCTS.find((pr) => pr.id === "p27");
+              const hasBac = items.some((i) => i.id === "p27");
+              if (!bac || hasBac) return null;
+              const v = bac.variants[0];
+              return (
+                <div style={{ border: "1px solid var(--gold)", background: "linear-gradient(135deg, rgba(176,130,67,0.10), transparent 72%)", padding: "12px 14px", margin: "6px 0 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 150 }}>
+                    <div style={{ fontSize: 13, color: "var(--cream)", marginBottom: 3 }}>Add bacteriostatic water</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>Needed to reconstitute lyophilized compounds · ${usd2(v.price)}</div>
+                  </div>
+                  <button type="button" className="lp-btn" onClick={() => addToCart(bac.id, v.id, 1)} style={{ fontSize: 12, whiteSpace: "nowrap" }}>+ Add</button>
+                </div>
+              );
+            })()}
+
             <hr className="lp-hairline" style={{ margin: "14px 0" }} />
 
             {/* Creator code and/or store promo code — one field, both kinds */}
