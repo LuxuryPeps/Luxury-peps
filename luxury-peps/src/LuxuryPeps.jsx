@@ -19,7 +19,7 @@ const SITE_CONFIG = {
   hours: "Mon–Fri, 9am–5pm",
   // Pre-order: flip `preorder` to false the moment stock arrives.
   preorder: true,
-  preorderShipEstimate: "3–7 days",
+  preorderShipEstimate: "2–6 days",
   effectiveDate: "June 27, 2026",
   freeShipThreshold: 150,
   flatShip: 12,
