@@ -520,8 +520,86 @@ const CATALOG = [...PRODUCTS];
 function findItem(id) { return CATALOG.find((x) => x.id === id); }
 // Everything (peptides + apparel) is on pre-order while inventory is inbound.
 // Flip SITE_CONFIG.preorder to false the moment stock arrives.
+// ── Verified analytical data ───────────────────────────────────────────────
+// Every entry below was checked against PubChem and its CAS check-digit
+// validated arithmetically. Compounds are listed here ONLY when the identity is
+// unambiguous — a product with no entry simply shows no spec table, because an
+// absent figure costs nothing and a wrong molecular weight costs a customer.
+//
+// Deliberately ABSENT, and why:
+//   p02 TB-500      - sold industry-wide as both full Thymosin B-4 (MW 4963)
+//                     and the Ac-LKKTETQ fragment (MW 889). Needs the COA.
+//   p08 GHK-Cu      - PubChem returns only charged forms; neutral spec needs COA.
+//   p21 GLP-3 RT    - absent from PubChem under every name and its CAS.
+//   p26 5-Amino-1MQ - iodide salt (MW 286.1) vs free base (MW 159.2). Needs COA.
+//   p30 HCG         - ~36.7 kDa glycoprotein, no small-molecule formula/CAS.
+//   p32 IGF-1 LR3   - 83-residue protein, not a small molecule.
+//   p27             - bacteriostatic water is a solution, not a compound.
+//   p29/p33/p34     - blends: specs come from their components.
+const CHEM = {
+  p01: { cas: "137525-51-0",  formula: "C62H98N16O22",     mw: "1419.5" },
+  p03: { cas: "910463-68-2",  formula: "C187H291N45O59",   mw: "4113.6" },
+  p04: { cas: "2023788-19-2", formula: "C225H348N48O68",   mw: "4813.5" },
+  p05: { cas: "170851-70-4",  formula: "C38H49N9O5",       mw: "711.9" },
+  p06: { cas: "863288-34-0",  formula: "C152H252N44O42",   mw: "3367.9", note: "Modified GRF (1-29) — the non-DAC molecule." },
+  p07: { cas: "121062-08-6",  formula: "C50H69N15O9",      mw: "1024.2" },
+  p09: { cas: "307297-39-8",  formula: "C14H22N4O9",       mw: "390.3" },
+  p11: { cas: "129954-34-3",  formula: "C33H57N11O9",      mw: "751.9" },
+  p12: { cas: "80714-61-0",   formula: "C37H51N9O10S",     mw: "813.9" },
+  p15: { cas: "86168-78-7",   formula: "C149H246N44O42S",  mw: "3357.9" },
+  p19: { cas: "1627580-64-6", formula: "C101H152N28O22S2", mw: "2174.6" },
+  p22: { cas: "53-84-9",      formula: "C21H27N7O14P2",    mw: "663.4" },
+  p23: { cas: "50-56-6",      formula: "C43H66N12O12S2",   mw: "1007.2", note: "Figures are for the peptide; supplied as the acetate salt." },
+  p24: { cas: "736992-21-5",  formula: "C32H49N9O5",       mw: "639.8" },
+  p25: { cas: "37221-79-7",   formula: "C147H237N43O43S",  mw: "3326.8" },
+  p28: { cas: "70-18-8",      formula: "C10H17N3O6S",      mw: "307.3" },
+  p31: { cas: "218949-48-5",  formula: "C221H366N72O67S",  mw: "5135.9" },
+};
+
+// Blends carry no single CAS — their specification is their components.
+const BLEND_PARTS = {
+  p29: ["p01", "p02"],
+  p33: ["p06", "p05"],
+  p34: ["p08", "p01", "p02"],
+};
+
+// Renders a subscripted molecular formula: C62H98N16O22 -> C₆₂H₉₈…
+function FormulaText({ value }) {
+  const parts = String(value || "").match(/[A-Z][a-z]?|\d+/g) || [];
+  return (
+    <span style={{ fontVariantNumeric: "normal" }}>
+      {parts.map((t, i) => (/^\d+$/.test(t) ? <sub key={i} style={{ fontSize: "0.72em" }}>{t}</sub> : <span key={i}>{t}</span>))}
+    </span>
+  );
+}
+
 function isPreorder(item) { if (item && item.inStock) return false; return SITE_CONFIG.preorder; }
-function isSoldOut(item) { return !!item.soldOut; }
+// Live stock, fetched once at startup. Kept module-level so isSoldOut() stays a
+// plain function (it's called from ~13 places, several outside React).
+// IMPORTANT: a product is only ever hidden by stock if it is BEING TRACKED and
+// has hit zero. If the fetch fails, or you've never set a count, LIVE_STOCK has
+// no entry and the product sells normally — a broken request must never empty
+// the shop.
+let LIVE_STOCK = {};
+async function loadStock() {
+  if (!BACKEND_LIVE) return;
+  try {
+    const r = await fetch(API_BASE + "/api/stock");
+    if (!r.ok) return;
+    const d = await r.json();
+    LIVE_STOCK = d.stock || {};
+  } catch (_) { /* leave empty: sell normally */ }
+}
+function stockLeft(item) {
+  const n = item && LIVE_STOCK[item.id];
+  return typeof n === "number" ? n : null;   // null = not tracked
+}
+function isSoldOut(item) {
+  if (!item) return false;
+  if (item.soldOut) return true;             // manual override in the catalog
+  const n = stockLeft(item);
+  return n !== null && n <= 0;
+}
 
 // Build an ordered, de-duplicated list of recommended products for the current cart.
 function getRecommendations(cartProductIds, limit = 4) {
@@ -1783,6 +1861,48 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
     (async () => { const d = await fetchProductReviews(productId); if (alive) setReviewData(d); })();
     return () => { alive = false; };
   }, [productId]);
+
+  // Product structured data. This is a single-page app, so the tag is injected
+  // for whichever product is open and removed on the way out. It's what lets a
+  // search engine read the price, availability, and the analytical identity.
+  useEffect(() => {
+    const prod = PRODUCTS.find((x) => x.id === productId);
+    if (!prod) return undefined;
+    const chem = CHEM[productId];
+    const extra = [];
+    if (chem) {
+      extra.push({ "@type": "PropertyValue", name: "CAS Number", value: chem.cas });
+      extra.push({ "@type": "PropertyValue", name: "Molecular Formula", value: chem.formula });
+      extra.push({ "@type": "PropertyValue", name: "Molecular Weight", value: chem.mw + " g/mol" });
+    }
+    extra.push({ "@type": "PropertyValue", name: "Purity", value: prod.purity + " (HPLC)" });
+    extra.push({ "@type": "PropertyValue", name: "Form", value: prod.form });
+
+    const data = {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      name: prod.name,
+      sku: prod.id,
+      description: `${prod.name} — ${prod.purity} HPLC-verified ${prod.form.toLowerCase()}${chem ? `, CAS ${chem.cas}, MW ${chem.mw} g/mol` : ""}. Supplied for in-vitro laboratory research only.`,
+      image: (typeof window !== "undefined" ? window.location.origin : "https://luxurypeps.com") + `/images/products/${prod.id}.jpg`,
+      brand: { "@type": "Brand", name: "Luxury Peps" },
+      additionalProperty: extra,
+      offers: prod.variants.map((v) => ({
+        "@type": "Offer",
+        sku: v.id,
+        price: Number(v.price).toFixed(2),
+        priceCurrency: "USD",
+        availability: isSoldOut(prod) ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+        url: (typeof window !== "undefined" ? window.location.origin : "https://luxurypeps.com") + "/",
+      })),
+    };
+    const tag = document.createElement("script");
+    tag.type = "application/ld+json";
+    tag.id = "lp-product-jsonld";
+    tag.textContent = JSON.stringify(data);
+    document.head.appendChild(tag);
+    return () => { const el = document.getElementById("lp-product-jsonld"); if (el) el.remove(); };
+  }, [productId]);
   if (!p) return null;
   const variant = p.variants.find((v) => v.id === variantId) || p.variants[0];
 
@@ -1887,6 +2007,17 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
             </button>
           </div>
 
+          {(() => {
+            // Real counts only — shown when a tracked product is genuinely low.
+            const left = stockLeft(p);
+            if (isSoldOut(p) || left === null || left > 5) return null;
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--gold-bright)", marginTop: 2 }}>
+                <AlertCircle size={13} /> Only {left} vial{left === 1 ? "" : "s"} left in stock
+              </div>
+            );
+          })()}
+
           {isSoldOut(p) ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#e0a0a0", marginTop: 2, marginBottom: 2 }}>
               <AlertCircle size={14} /> Currently out of stock — check back soon.
@@ -1898,6 +2029,8 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
           )}
         </div>
       </div>
+
+      <SpecTable p={p} />
 
       <div id="lp-reviews" style={{ marginTop: 72, scrollMarginTop: 90 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 6, flexWrap: "wrap" }}>
@@ -1960,6 +2093,8 @@ function ComparePage({ setPage, openProduct }) {
     { label: "Category", get: (p) => (CATEGORIES.find((c) => c.id === p.category) || {}).label || "—" },
     { label: "Form", get: (p) => p.form },
     { label: "Purity (HPLC)", get: (p) => p.purity },
+    { label: "CAS Number", get: (p) => (CHEM[p.id] ? CHEM[p.id].cas : "—") },
+    { label: "Molecular Weight", get: (p) => (CHEM[p.id] ? CHEM[p.id].mw + " g/mol" : "—") },
     { label: "Sizes", get: (p) => p.variants.map((v) => v.size.replace(/ \/ (vial|bottle)/, "")).join(", ") },
     { label: "From", get: (p) => `$${usd2(minPrice(p))}` },
 
@@ -3266,22 +3401,88 @@ function Success({ setPage, clearCart }) {
   );
 }
 
+// ── Standards page ─────────────────────────────────────────────────────────
+// The credibility page for a chemical supplier. Every claim below restates
+// something the site already commits to (third-party HPLC, >=98% purity,
+// per-batch COA, cold-chain, unmarked packaging) or something structurally
+// true (batch prefixes, PubChem-verified published specs). Nothing new is
+// invented here — an unverifiable claim on this page would undo its purpose.
+const STANDARD_SECTIONS = [
+  {
+    title: "Two tests, not one",
+    body: [
+      "Purity is measured by third-party High-Performance Liquid Chromatography before a compound is listed. HPLC separates a sample into its components and reports each as a proportion of total peak area, which is what a purity percentage actually means.",
+      "Purity alone doesn't establish identity. Mass spectrometry is used alongside it to confirm the observed mass matches the compound's expected molecular weight — that the material is the molecule named, not merely a pure something. A sample can be 99% pure and still be the wrong compound.",
+      "Our listing threshold is 98%. Every compound in the catalogue is at or above it, and each product page states its own figure rather than a blanket claim.",
+    ],
+  },
+  {
+    title: "The certificate travels with the batch",
+    body: [
+      "A certificate of analysis is a per-batch record, not a general document. It identifies the lot, states the analytical methods used, and reports the measured purity and observed mass for that specific production run.",
+      "Every product carries a batch reference, and the number printed on your vial is the number on its certificate. If those two don't match, the certificate is telling you about different material — which is why we ask you to check them against each other rather than take the pairing on trust.",
+      "Certificates are available for every batch number we list.",
+    ],
+  },
+  {
+    title: "Specifications you can check for yourself",
+    body: [
+      "Each product page publishes its CAS number, molecular formula, and molecular weight as text — not as an image. That's a deliberate choice: figures locked inside a picture can't be searched, copied into an inventory system, read by a screen reader, or checked by anyone.",
+      "Every published figure has been verified against PubChem, the public chemical database maintained by the US National Library of Medicine, and each CAS number validated by its check digit — the arithmetic built into the number itself that a transcription error fails.",
+      "We'd rather you verified it than believed it. Take any CAS number from a product page, look it up, and confirm the formula and mass we publish. Where a compound's identity is genuinely ambiguous in this industry, or where we cannot verify a figure to that standard, we publish no figure at all rather than a confident guess.",
+    ],
+  },
+  {
+    title: "Handling, storage, and transit",
+    body: [
+      "Compounds are supplied lyophilized — freeze-dried under vacuum — because dry material is substantially more stable in transit and storage than material in solution. The visible quantity in a vial is often a faint film rather than an obvious powder; that is normal at milligram scale, as vials are filled by mass.",
+      "Vials are sealed and shipped cold-chain to preserve integrity in transit, in unmarked packaging with no indication of contents on the exterior.",
+      "On arrival, lyophilized material stored below freezing and protected from light is the most stable form. Reconstituted material degrades considerably faster, and repeated freeze-thaw cycles accelerate that further.",
+    ],
+  },
+  {
+    title: "What we don't do",
+    body: [
+      "We do not provide dosing guidance, administration instructions, protocols, or any information intended for human or veterinary use — not on request, not by email, not in reviews we publish. Everything here is supplied for in-vitro laboratory research by qualified professionals.",
+      "We don't publish reviews we can't tie to a real order. Reviews come only from verified purchases and cover product and service quality — purity against the certificate, documentation, packaging, and shipping.",
+      "We don't advertise a discount we don't apply, and the price shown at checkout is the price charged, computed to the cent.",
+    ],
+  },
+];
+
 function About({ setPage }) {
   return (
-    <div className="lp-fade" style={{ maxWidth: 800, margin: "0 auto", padding: "70px 28px 100px" }}>
+    <div className="lp-fade" style={{ maxWidth: 820, margin: "0 auto", padding: "64px 28px 100px" }}>
       <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Standards</div>
-      <h2 className="lp-serif" style={{ fontSize: 36, marginBottom: 26 }}>How every batch is verified</h2>
-      <p style={{ color: "var(--muted)", lineHeight: 1.85, fontSize: 15, marginBottom: 20 }}>
-        Each compound listed in the catalog is tested by third-party HPLC analysis prior to listing, with
-        a certificate of analysis available on request for every batch number. Vials are lyophilized,
-        sealed, and shipped cold-chain to preserve integrity in transit.
+      <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 14 }}>How every batch is verified</h1>
+      <p style={{ color: "var(--muted)", fontSize: 15, lineHeight: 1.85, marginBottom: 14 }}>
+        Anyone can claim purity. What follows is what we actually test, what we publish, how you can
+        check it yourself, and — equally — what we refuse to do.
       </p>
-      <p style={{ color: "var(--muted)", lineHeight: 1.85, fontSize: 15, marginBottom: 40 }}>
-        All compounds are sold strictly for laboratory research use by qualified buyers. Luxury Peps does
-        not provide dosing guidance, administration instructions, or any information intended for human
-        or animal use.
-      </p>
-      <button className="lp-btn" onClick={() => setPage("shop")}>View Catalog</button>
+
+      <div style={{ border: "1px solid var(--gold)", background: "linear-gradient(135deg, rgba(176,130,67,0.12), transparent 72%)", padding: "14px 16px", marginBottom: 44, display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <ShieldCheck size={16} color="var(--gold-bright)" style={{ flexShrink: 0, marginTop: 2 }} />
+        <p style={{ fontSize: 13, color: "var(--cream)", lineHeight: 1.6, margin: 0 }}>
+          Every compound is supplied for in-vitro laboratory research only. Nothing sold here is a drug,
+          supplement, or food, and none of it is approved for human or veterinary use.
+        </p>
+      </div>
+
+      {STANDARD_SECTIONS.map((sec) => (
+        <section key={sec.title} style={{ marginBottom: 42 }}>
+          <h2 className="lp-serif" style={{ fontSize: 23, fontWeight: 400, marginBottom: 14 }}>{sec.title}</h2>
+          {sec.body.map((para, i) => (
+            <p key={i} style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.85, marginBottom: 14 }}>{para}</p>
+          ))}
+        </section>
+      ))}
+
+      <hr className="lp-hairline" style={{ margin: "10px 0 30px" }} />
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button className="lp-btn lp-btn-solid" onClick={() => setPage("shop")}>View the catalog</button>
+        <button className="lp-btn" onClick={() => setPage("guide")}>The Research Guide</button>
+        <button className="lp-btn" onClick={() => setPage("coa")}>Certificates of Analysis</button>
+      </div>
     </div>
   );
 }
@@ -5619,6 +5820,90 @@ function AmbassadorPage({ setPage }) {
 }
 
 
+// ── Specification table ────────────────────────────────────────────────────
+// Real, selectable text — not pixels in a JPEG. This is what makes a CAS number
+// searchable on Google, copyable into a lab inventory, and readable by a screen
+// reader. Products without verified data show no table rather than a guess.
+function SpecTable({ p }) {
+  const chem = CHEM[p.id];
+  const parts = BLEND_PARTS[p.id];
+  const isSolution = p.id === "p27";
+
+  const rows = [];
+  if (chem) {
+    rows.push(["CAS Number", <span style={{ userSelect: "all" }}>{chem.cas}</span>]);
+    rows.push(["Molecular Formula", <FormulaText value={chem.formula} />]);
+    rows.push(["Molecular Weight", `${chem.mw} g/mol`]);
+  }
+  rows.push(["Purity", `\u2265 ${p.purity} (HPLC)`]);
+  rows.push(["Physical Form", p.form]);
+  rows.push(["Batch Reference", `${p.batchPrefix} series`]);
+  rows.push(["Storage", isSolution
+    ? "Store at room temperature. Protect from light."
+    : "Store lyophilized at -20\u00B0C, protected from light. Reconstituted material is markedly less stable."]);
+  rows.push(["Intended Use", "In-vitro laboratory research only. Not for human or veterinary use."]);
+
+  return (
+    <div style={{ marginTop: 56 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <h3 className="lp-serif" style={{ fontSize: 26 }}>Specification</h3>
+        {chem && <span style={{ fontSize: 11, color: "var(--gold)", letterSpacing: "0.04em" }}>Verified against PubChem</span>}
+      </div>
+      <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 20, lineHeight: 1.7 }}>
+        {chem
+          ? "Analytical identity for this compound. Batch-specific purity is reported on the certificate of analysis shipped with your vial."
+          : "Batch-specific analytical data for this item is reported on the certificate of analysis shipped with your vial."}
+      </p>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+        <tbody>
+          {rows.map(([k, v], i) => (
+            <tr key={i} style={{ borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)" }}>
+              <th scope="row" style={{ textAlign: "left", padding: "11px 14px 11px 0", color: "var(--muted)", fontWeight: 400, width: "42%", verticalAlign: "top" }}>{k}</th>
+              <td style={{ padding: "11px 0", color: "var(--cream)", verticalAlign: "top" }}>{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {chem && chem.note && (
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.6 }}>{chem.note}</p>
+      )}
+
+      {parts && (
+        <div style={{ marginTop: 22 }}>
+          <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Components</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                {["Compound", "CAS", "M.W."].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "8px 10px 8px 0", color: "var(--muted)", fontWeight: 400, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {parts.map((id) => {
+                const cp = PRODUCTS.find((x) => x.id === id);
+                const cc = CHEM[id];
+                return (
+                  <tr key={id} style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "9px 10px 9px 0", color: "var(--cream)" }}>{cp ? cp.name : id}</td>
+                    <td style={{ padding: "9px 10px 9px 0", color: cc ? "var(--cream)" : "var(--muted)", userSelect: "all" }}>{cc ? cc.cas : "on COA"}</td>
+                    <td style={{ padding: "9px 0", color: cc ? "var(--cream)" : "var(--muted)" }}>{cc ? cc.mw : "on COA"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 10, lineHeight: 1.6 }}>
+            Blends have no single CAS number — each component is specified separately above.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Research guide: education content (search traffic + pre-purchase answers) ─
 const GUIDE_SECTIONS = [
   {
@@ -6326,6 +6611,10 @@ ${catalogContext}`;
 
 function LuxuryPepsStore({ userEmail, onLogout }) {
   const [page, setPage] = useState("home");
+  // LIVE_STOCK is module-level (isSoldOut is a plain function), so bump this once
+  // the fetch lands to trigger a single re-render with real stock applied.
+  const [, setStockTick] = useState(0);
+  useEffect(() => { loadStock().then(() => setStockTick((n) => n + 1)); }, []);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [cart, setCart] = useState([]);
   const [showNewsletter, setShowNewsletter] = useState(false);
