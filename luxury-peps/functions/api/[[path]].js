@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-10.1";
+const BACKEND_VERSION = "2026-07-15.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -133,7 +133,21 @@ function bytesToHex(bytes) { return Array.from(bytes).map((b) => b.toString(16).
 async function claimOrderAsPaid(db, reference, transId) {
   const r = await db.run("update orders set status='paid', paid_at=datetime('now'), anet_trans_id=coalesce(anet_trans_id, ?) where reference=? and status<>'paid' and status<>'shipped'", transId || null, reference);
   const changes = (r && r.meta && typeof r.meta.changes === "number") ? r.meta.changes : 1;
+  if (changes > 0) {
+    // Runs only for the winner of the claim, so stock can never be double-counted
+    // by the webhook and the browser confirmation both firing.
+    try { await decrementStock(db, reference); } catch (_) { /* never block a payment */ }
+  }
   return changes > 0;
+}
+
+// Reduces stock for a paid order. Only touches products that are actually
+// tracked, and never goes below zero.
+async function decrementStock(db, reference) {
+  const items = await db.all("select product_id, sum(qty) as qty from order_items where order_ref=? group by product_id", reference);
+  for (const it of items) {
+    await db.run("update inventory set count = max(0, count - ?), updated_at = datetime('now') where product_id = ? and count is not null", Math.max(0, Number(it.qty) || 0), it.product_id);
+  }
 }
 
 async function sendCardOrderEmails(env, db, order) {
@@ -314,6 +328,17 @@ export async function onRequest(context) {
         html: `<div style="font-family:Arial,sans-serif"><p>This is a test email from your Luxury Peps backend.</p><p>If you're reading this, order notifications will reach <b>${esc(to)}</b>.</p></div>`,
       }, db);
       return J({ to, ...r });
+    }
+
+    // ---- PUBLIC: live stock for tracked products ---------------------------
+    // Only returns products you've actually given a count. Anything untracked is
+    // absent, and the storefront treats absent as "sell normally" — so an empty
+    // table or a failed request can never mark the catalog sold out.
+    if (path === "/api/stock" && method === "GET") {
+      const rows = await db.all("select product_id, count from inventory where count is not null");
+      const stock = {};
+      for (const r of rows) stock[r.product_id] = Math.max(0, Number(r.count) || 0);
+      return J({ stock });
     }
 
     // ---- PUBLIC: approved reviews for one product --------------------------
