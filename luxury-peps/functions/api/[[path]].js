@@ -20,11 +20,15 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-09.4";
+const BACKEND_VERSION = "2026-07-10.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
 const OWNER_EMAIL_FALLBACK = "hello@luxurypeps.com";
+// Analytics: only these events are accepted, and only this many per IP per hour.
+// A real visitor browsing hard might hit ~60; 200 leaves plenty of headroom.
+const TRACK_EVENTS = new Set(["page_view", "product_view", "checkout_start"]);
+const TRACK_MAX_PER_HOUR = 200;
 const ownerEmail = (env) => (env.OWNER_EMAIL || "").trim() || OWNER_EMAIL_FALLBACK;
 const METHOD_LABEL = { bank: "Bank transfer", cashapp: "Cash App", zelle: "Zelle", crypto: "Crypto (USDC)" };
 const DAY = 24 * 60 * 60 * 1000;
@@ -36,7 +40,7 @@ const J = (obj, status = 200) => new Response(JSON.stringify(obj), {
   headers: {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Owner-Pin",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   },
 });
@@ -208,6 +212,7 @@ async function ensureSchema(db) {
   await t("create unique index if not exists reviews_one_per_product on reviews (order_ref, product_id)");
   await t("create table if not exists email_log (id integer primary key autoincrement, recipient text, subject text, status integer, error text, created_at text not null default (datetime('now')))");
   await t("create table if not exists webhook_log (id integer primary key autoincrement, event_type text, signature_ok integer, matched_order text, note text, created_at text not null default (datetime('now')))");
+  await t("create table if not exists rate_counters (k text primary key, n integer not null default 0, bucket integer not null)");
 }
 
 // ── Router ─────────────────────────────────────────────────────────────────
@@ -223,7 +228,16 @@ export async function onRequest(context) {
   const PREORDER = (env.PREORDER || "true").toLowerCase() !== "false";
   const OWNER_EMAIL = ownerEmail(env);
   const PAY = { bank: env.PAY_BANK || "", cashapp: env.PAY_CASHAPP || "", zelle: env.PAY_ZELLE || "", crypto: env.PAY_CRYPTO || "" };
-  const ownerOK = (pin) => OWNER_PIN && String(pin || "").trim() === OWNER_PIN;
+  // The owner PIN now travels in the X-Owner-Pin header instead of the URL:
+  // query strings get written into server logs, proxy logs, and browser history,
+  // headers don't. Callers that still pass ?pin= or {pin} keep working, so an
+  // older frontend won't lock the owner out mid-deploy.
+  const headerPin = request.headers.get("x-owner-pin") || "";
+  const ownerOK = (pin) => {
+    if (!OWNER_PIN) return false;
+    const supplied = String(pin || "").trim() || String(headerPin || "").trim();
+    return supplied === OWNER_PIN;
+  };
 
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "");
@@ -446,13 +460,28 @@ export async function onRequest(context) {
     // Stores only: event name, optional product id, coarse day, referrer host.
     if (path === "/api/track" && method === "POST") {
       try {
-        await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))");
-        const ev = String(body.event || "").slice(0, 40);
-        if (!ev) return J({ ok: true });
-        const pid = body.productId ? String(body.productId).slice(0, 20) : null;
+        // 1) Only events this app actually emits. Anything else is dropped before
+        //    touching the database, so the endpoint can't be used to write junk.
+        const ev = String(body.event || "");
+        if (!TRACK_EVENTS.has(ev)) return J({ ok: true });
+        // 2) Product ids have a fixed shape.
+        const pid = /^p\d{1,3}$/.test(String(body.productId || "")) ? String(body.productId) : null;
+
+        // 3) Per-IP hourly cap. The IP is salted-hashed, never stored raw, so this
+        //    rate-limits abuse without keeping personally identifying data.
+        const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "unknown";
+        const bucket = Math.floor(Date.now() / 3600000);
+        const key = (await hmac(APP_SECRET, "trk:" + ip)).slice(0, 24) + ":" + bucket;
+        await db.run("insert into rate_counters (k, n, bucket) values (?, 1, ?) on conflict(k) do update set n = n + 1", key, bucket);
+        const row = await db.first("select n from rate_counters where k=?", key);
+        if (row && row.n > TRACK_MAX_PER_HOUR) return J({ ok: true }); // silently drop
+
         let ref = "";
         try { ref = body.referrer ? new URL(String(body.referrer)).hostname.slice(0, 80) : ""; } catch (_) { ref = ""; }
         await db.run("insert into events (event, product_id, referrer) values (?, ?, ?)", ev, pid, ref);
+
+        // Occasionally sweep stale buckets so the table can't grow forever.
+        if (Math.random() < 0.02) { try { await db.run("delete from rate_counters where bucket < ?", bucket - 2); } catch (_) {} }
       } catch (_) { /* analytics must never break the site */ }
       return J({ ok: true });
     }
