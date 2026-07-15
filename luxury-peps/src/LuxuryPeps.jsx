@@ -18,7 +18,8 @@ const SITE_CONFIG = {
   timezone: "CT",
   hours: "Mon–Fri, 9am–5pm",
   // Pre-order: flip `preorder` to false the moment stock arrives.
-  preorder: true,
+  preorder: false,
+  // Only shown while `preorder` is true. Kept for the next restock gap.
   preorderShipEstimate: "1–5 days",
   effectiveDate: "June 27, 2026",
   freeShipThreshold: 150,
