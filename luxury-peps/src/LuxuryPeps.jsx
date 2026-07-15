@@ -828,7 +828,10 @@ function productCoaSrc(id) { return `${PRODUCT_IMAGE_BASE}/${id}-coa.jpg`; }
 
 // Renders a product photo with graceful fallback: folder file → built-in image
 // → the supplied `fallback` node. Used where a plain <img> was before.
-function ProductImg({ id, alt = "", style = {}, className = "", fallback = null }) {
+// `priority` marks an image as above-the-fold (hero): it loads immediately.
+// Everything else is lazy, so the shop page no longer downloads all 27 photos
+// at once — only the cards actually scrolled into view.
+function ProductImg({ id, alt = "", style = {}, className = "", fallback = null, priority = false }) {
   const embedded = PRODUCT_IMAGES[id];
   // 0 = try folder file, 1 = try built-in image, 2 = give up (show fallback node)
   const [tier, setTier] = useState(0);
@@ -841,6 +844,9 @@ function ProductImg({ id, alt = "", style = {}, className = "", fallback = null 
       alt={alt}
       className={className}
       style={style}
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
+      fetchPriority={priority ? "high" : "auto"}
       onError={() => setTier((t) => (t === 0 && embedded ? 1 : 2))}
     />
   );
@@ -862,6 +868,8 @@ function VialStage({ name, purity, width = 240, molecular = true, reflection = t
         <img
           src={resolvedSrc}
           alt={`${name} vial`}
+          loading="lazy"
+          decoding="async"
           onError={() => setTier((t) => (t === 0 && imageSrc ? 1 : 2))}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block", zIndex: 1, padding: "6%" }}
         />
@@ -1234,7 +1242,7 @@ function Home({ setPage, addToCart, openProduct }) {
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.transform = "none"; }}
             >
               <div style={{ position: "relative", aspectRatio: "4 / 5", background: "var(--panel-2)" }}>
-                <ProductImg id={hero.id} alt={hero.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}><VialIcon size={52} /></div>} />
+                <ProductImg id={hero.id} alt={hero.name} priority style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}><VialIcon size={52} /></div>} />
                 <span style={{ position: "absolute", top: 12, left: 12, fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--gold-bright)", background: "rgba(10,7,5,0.72)", border: "1px solid var(--line)", padding: "5px 9px" }}>Featured Specimen</span>
               </div>
               <div style={{ padding: "15px 18px", borderTop: "1px solid var(--line)" }}>
@@ -1741,7 +1749,7 @@ function ProductGallery({ p }) {
           <VialStage name={p.name} purity={p.purity} width={230} imageId={p.id} imageSrc={PRODUCT_IMAGES[p.id]} style={{ minHeight: 420 }} />
         ) : (
           <div style={{ minHeight: 420, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--panel)", border: "1px solid var(--line)" }}>
-            <img src={cur.src} alt={`${p.name} Certificate of Analysis`} style={{ width: "100%", maxHeight: 560, objectFit: "contain", padding: "4%" }} />
+            <img src={cur.src} alt={`${p.name} Certificate of Analysis`} loading="lazy" decoding="async" style={{ width: "100%", maxHeight: 560, objectFit: "contain", padding: "4%" }} />
           </div>
         )}
         {n > 1 && (
@@ -4205,6 +4213,11 @@ function InventoryPanel({ inventory, setInventory, threshold, setThreshold }) {
 
 function OwnerPortal({ setPage }) {
   const [pin, setPin] = useState("");
+  // Every owner request sends the PIN in a header rather than the URL. Query
+  // strings end up in server logs, proxy logs, and browser history; headers
+  // don't. `pin` can be overridden for calls made during login, before state set.
+  const ownerFetch = (path, { pin: pinArg, ...opts } = {}) =>
+    fetch(API_BASE + path, { ...opts, headers: { ...(opts.headers || {}), "X-Owner-Pin": String(pinArg || pin || "") } });
   const [authed, setAuthed] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -4225,7 +4238,7 @@ function OwnerPortal({ setPage }) {
   useEffect(() => { if (!live) loadLocalReqs(); }, [authed]);
   const resolveRequest = async (id, action) => {
     if (live) {
-      try { const res = await fetch(API_BASE + "/api/owner/payout-requests/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, id, action }) }); if (res.ok) refresh(); } catch (_) { /* ignore */ }
+      try { const res = await ownerFetch("/api/owner/payout-requests/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) }); if (res.ok) refresh(); } catch (_) { /* ignore */ }
       return;
     }
     try {
@@ -4311,9 +4324,9 @@ function OwnerPortal({ setPage }) {
     if (!/^[0-9]{4,}$/.test(portalPin)) { setAmbError("PIN must be at least 4 digits."); return; }
     if (live) {
       try {
-        const res = await fetch(API_BASE + "/api/owner/ambassadors", {
+        const res = await ownerFetch("/api/owner/ambassadors", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pin, code, creator, pct: pct / 100, portalPin }),
+          body: JSON.stringify({ code, creator, pct: pct / 100, portalPin }),
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) { setAmbError(d.error || "Couldn't add ambassador."); return; }
@@ -4329,7 +4342,7 @@ function OwnerPortal({ setPage }) {
   const removeAmbassador = async (code) => {
     if (live) {
       try {
-        const res = await fetch(API_BASE + "/api/owner/ambassadors/" + encodeURIComponent(code) + "?pin=" + encodeURIComponent(pin), { method: "DELETE" });
+        const res = await ownerFetch("/api/owner/ambassadors/" + encodeURIComponent(code), { method: "DELETE" });
         if (res.ok) refresh();
       } catch (_) { /* no-op */ }
       return;
@@ -4373,7 +4386,7 @@ function OwnerPortal({ setPage }) {
     setLoading(true);
     try {
       if (live) {
-        const res = await fetch(API_BASE + "/api/owner/overview?pin=" + encodeURIComponent(p));
+        const res = await ownerFetch("/api/owner/overview", { pin: p });
         if (res.status === 401) { setError("Incorrect PIN."); setLoading(false); return; }
         if (!res.ok) { setError("Couldn't load the dashboard. Try again shortly."); setLoading(false); return; }
         setData(await res.json());
@@ -4409,15 +4422,15 @@ function OwnerPortal({ setPage }) {
     if (!live) return;
     let n = 0;
     try {
-      const c = await fetch(API_BASE + "/api/owner/incomplete-count?hours=24&pin=" + encodeURIComponent(pin));
+      const c = await ownerFetch("/api/owner/incomplete-count?hours=24");
       if (c.ok) n = (await c.json()).count || 0;
     } catch (_) { /* fall through to confirm anyway */ }
     if (n === 0) { setClearMsg("No incomplete checkouts older than 24 hours."); return; }
     if (!window.confirm(`Archive ${n} incomplete checkout${n === 1 ? "" : "s"} older than 24 hours?\n\nThese were never paid. Paid orders are never touched.`)) return;
     try {
-      const r = await fetch(API_BASE + "/api/owner/clear-incomplete", {
+      const r = await ownerFetch("/api/owner/clear-incomplete", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin, hours: 24 }),
+        body: JSON.stringify({ hours: 24 }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setClearMsg(d.error || "Couldn't clear them."); return; }
@@ -4430,39 +4443,39 @@ function OwnerPortal({ setPage }) {
     if (!live) return;
     setDiag("loading");
     try {
-      const r = await fetch(API_BASE + "/api/owner/diagnostics?pin=" + encodeURIComponent(pin));
+      const r = await ownerFetch("/api/owner/diagnostics");
       setDiag(r.ok ? await r.json() : null);
     } catch (_) { setDiag(null); }
   };
   const sendTestEmail = async () => {
     setTestEmailResult("Sending…");
     try {
-      const r = await fetch(API_BASE + "/api/owner/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+      const r = await ownerFetch("/api/owner/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
       const d = await r.json().catch(() => ({}));
       setTestEmailResult(d.ok ? `Accepted by Resend for ${d.to} — check that inbox (and spam).` : `FAILED (${d.status || "?"}): ${d.error || "unknown error"}`);
     } catch (_) { setTestEmailResult("Couldn't reach the server."); }
   };
   const loadReviews = async (p) => {
     if (!live) return;
-    try { const r = await fetch(API_BASE + "/api/owner/reviews?status=pending&pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setPendingReviews(d.reviews || []); } } catch (_) { /* ignore */ }
+    try { const r = await ownerFetch("/api/owner/reviews?status=pending", { pin: p }); if (r.ok) { const d = await r.json(); setPendingReviews(d.reviews || []); } } catch (_) { /* ignore */ }
   };
   const moderateReview = async (id, action) => {
     try {
-      await fetch(API_BASE + "/api/owner/reviews/moderate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, id, action }) });
+      await ownerFetch("/api/owner/reviews/moderate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) });
       loadReviews(pin);
     } catch (_) { /* ignore */ }
   };
   const loadPromos = async (p) => {
     if (!live) return;
-    try { const r = await fetch(API_BASE + "/api/owner/promos?pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setPromos(d.promos || []); } } catch (_) { /* ignore */ }
+    try { const r = await ownerFetch("/api/owner/promos", { pin: p }); if (r.ok) { const d = await r.json(); setPromos(d.promos || []); } } catch (_) { /* ignore */ }
   };
   const savePromo = async () => {
     setPromoMsg("");
     const value = promoForm.kind === "amount" ? Math.round(Number(promoForm.value) * 100) : Number(promoForm.value);
     try {
-      const r = await fetch(API_BASE + "/api/owner/promos", {
+      const r = await ownerFetch("/api/owner/promos", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin, code: promoForm.code, kind: promoForm.kind, value, expiresAt: promoForm.expiresAt || null, maxUses: promoForm.maxUses || null }),
+        body: JSON.stringify({ code: promoForm.code, kind: promoForm.kind, value, expiresAt: promoForm.expiresAt || null, maxUses: promoForm.maxUses || null }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setPromoMsg(d.error || "Couldn't save that code."); return; }
@@ -4472,25 +4485,25 @@ function OwnerPortal({ setPage }) {
     } catch (_) { setPromoMsg("Couldn't reach the server."); }
   };
   const togglePromo = async (code) => {
-    try { await fetch(API_BASE + "/api/owner/promos/toggle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, code }) }); loadPromos(pin); } catch (_) { /* ignore */ }
+    try { await ownerFetch("/api/owner/promos/toggle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }); loadPromos(pin); } catch (_) { /* ignore */ }
   };
   const deletePromo = async (code) => {
     if (!window.confirm(`Delete promo code ${code}? Orders that already used it are unaffected.`)) return;
-    try { await fetch(API_BASE + "/api/owner/promos?pin=" + encodeURIComponent(pin) + "&code=" + encodeURIComponent(code), { method: "DELETE" }); loadPromos(pin); } catch (_) { /* ignore */ }
+    try { await ownerFetch("/api/owner/promos?code=" + encodeURIComponent(code), { method: "DELETE" }); loadPromos(pin); } catch (_) { /* ignore */ }
   };
   const loadStats = async (p) => {
     if (!live) return;
-    try { const r = await fetch(API_BASE + "/api/owner/analytics?pin=" + encodeURIComponent(p)); if (r.ok) setStats(await r.json()); } catch (_) { /* ignore */ }
+    try { const r = await ownerFetch("/api/owner/analytics", { pin: p }); if (r.ok) setStats(await r.json()); } catch (_) { /* ignore */ }
   };
   const loadInbox = async (p) => {
     if (!live) return;
-    try { const r = await fetch(API_BASE + "/api/owner/messages?pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setInboxMsgs(d.messages || []); } } catch (_) { /* ignore */ }
-    try { const r = await fetch(API_BASE + "/api/owner/applications?pin=" + encodeURIComponent(p)); if (r.ok) { const d = await r.json(); setInboxApps(d.applications || []); } } catch (_) { /* ignore */ }
+    try { const r = await ownerFetch("/api/owner/messages", { pin: p }); if (r.ok) { const d = await r.json(); setInboxMsgs(d.messages || []); } } catch (_) { /* ignore */ }
+    try { const r = await ownerFetch("/api/owner/applications", { pin: p }); if (r.ok) { const d = await r.json(); setInboxApps(d.applications || []); } } catch (_) { /* ignore */ }
   };
   const refresh = async () => {
     if (!live) return;
     try {
-      const res = await fetch(API_BASE + "/api/owner/overview?pin=" + encodeURIComponent(pin));
+      const res = await ownerFetch("/api/owner/overview");
       if (res.ok) setData(await res.json());
     } catch (_) { /* keep current */ }
     loadInbox(pin);
@@ -4503,9 +4516,9 @@ function OwnerPortal({ setPage }) {
   const markPaid = async (orderId) => {
     if (live) {
       try {
-        const res = await fetch(API_BASE + "/api/owner/mark-paid", {
+        const res = await ownerFetch("/api/owner/mark-paid", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pin, orderId }),
+          body: JSON.stringify({ orderId }),
         });
         if (res.ok) refresh();
       } catch (_) { /* no-op */ }
@@ -4521,9 +4534,9 @@ function OwnerPortal({ setPage }) {
   const markUnpaid = async (orderId) => {
     if (live) {
       try {
-        const res = await fetch(API_BASE + "/api/owner/mark-unpaid", {
+        const res = await ownerFetch("/api/owner/mark-unpaid", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pin, orderId }),
+          body: JSON.stringify({ orderId }),
         });
         if (res.ok) refresh();
       } catch (_) { /* no-op */ }
@@ -4535,8 +4548,24 @@ function OwnerPortal({ setPage }) {
       await window.storage.set("orderHistory", JSON.stringify(updated), false);
     } catch (_) { /* ignore */ }
   };
-  const exportOrdersCsv = () => {
-    if (live) { window.open(API_BASE + "/api/owner/orders.csv?pin=" + encodeURIComponent(pin), "_blank"); return; }
+  const exportOrdersCsv = async () => {
+    if (live) {
+      // Fetched (not window.open) so the PIN rides in a header instead of the URL.
+      try {
+        const res = await ownerFetch("/api/owner/orders.csv");
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "luxury-peps-orders.csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (_) { /* no-op */ }
+      return;
+    }
     // Browser mode: build the CSV from orders saved on this device.
     const escCsv = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
     const rows = [["Reference", "Date", "Status", "Method", "Code", "Total", "Customer", "Email", "Address", "City", "State", "Zip", "Country", "Items"]];
@@ -4556,9 +4585,9 @@ function OwnerPortal({ setPage }) {
     if (tracking === null) return; // cancelled
     if (live) {
       try {
-        const res = await fetch(API_BASE + "/api/owner/mark-shipped", {
+        const res = await ownerFetch("/api/owner/mark-shipped", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pin, orderId, tracking: tracking.trim() }),
+          body: JSON.stringify({ orderId, tracking: tracking.trim() }),
         });
         if (res.ok) refresh();
       } catch (_) { /* no-op */ }
@@ -4573,9 +4602,9 @@ function OwnerPortal({ setPage }) {
   const archiveOrder = async (orderId, archived) => {
     if (live) {
       try {
-        const res = await fetch(API_BASE + "/api/owner/archive", {
+        const res = await ownerFetch("/api/owner/archive", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pin, orderId, archived }),
+          body: JSON.stringify({ orderId, archived }),
         });
         if (res.ok) refresh();
       } catch (_) { /* no-op */ }
@@ -4595,9 +4624,9 @@ function OwnerPortal({ setPage }) {
     const dollars = parseFloat(input);
     if (!Number.isFinite(dollars) || dollars <= 0) return;
     try {
-      const res = await fetch(API_BASE + "/api/owner/payout", {
+      const res = await ownerFetch("/api/owner/payout", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin, code, amountCents: Math.round(dollars * 100), note: "Manual payout" }),
+        body: JSON.stringify({ code, amountCents: Math.round(dollars * 100), note: "Manual payout" }),
       });
       if (res.ok) refresh();
     } catch (_) { /* no-op */ }
@@ -5196,7 +5225,7 @@ function AmbassadorPortal({ setPage }) {
       try {
         const res = await fetch(API_BASE + "/api/creator/" + encodeURIComponent(c) + "/request-payout", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pin, amountCents, method: reqMethod, details: reqDetails }),
+          body: JSON.stringify({ amountCents, method: reqMethod, details: reqDetails }),
         });
         if (res.ok) { setReqStatus("sent"); setReqDetails(""); setReqAmount(""); }
         else { setReqStatus("error"); setError("Couldn't send the request. Try again shortly."); }
