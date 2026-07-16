@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-15.1";
+const BACKEND_VERSION = "2026-07-16.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -227,6 +227,11 @@ async function ensureSchema(db) {
   await t("create table if not exists email_log (id integer primary key autoincrement, recipient text, subject text, status integer, error text, created_at text not null default (datetime('now')))");
   await t("create table if not exists webhook_log (id integer primary key autoincrement, event_type text, signature_ok integer, matched_order text, note text, created_at text not null default (datetime('now')))");
   await t("create table if not exists rate_counters (k text primary key, n integer not null default 0, bucket integer not null)");
+  // Marketing list. consent_text stores the EXACT wording the person agreed to:
+  // under the TCPA it's not enough to have a number, you must be able to show
+  // what they consented to and when.
+  await t("create table if not exists subscribers (id integer primary key autoincrement, phone text, email text, consent_text text, source text, ip_hash text, created_at text not null default (datetime('now')), unsubscribed_at text)");
+  await t("create unique index if not exists subscribers_phone on subscribers (phone)");
 }
 
 // ── Router ─────────────────────────────────────────────────────────────────
@@ -328,6 +333,52 @@ export async function onRequest(context) {
         html: `<div style="font-family:Arial,sans-serif"><p>This is a test email from your Luxury Peps backend.</p><p>If you're reading this, order notifications will reach <b>${esc(to)}</b>.</p></div>`,
       }, db);
       return J({ to, ...r });
+    }
+
+    // ---- PUBLIC: marketing list signup -------------------------------------
+    // Previously this wrote to window.storage, i.e. the visitor's own browser,
+    // so every signup was lost. It now reaches the database.
+    if (path === "/api/subscribe" && method === "POST") {
+      const phone = String(body.phone || "").replace(/[^\d]/g, "");
+      const email = String(body.email || "").trim().toLowerCase();
+      if (phone.length < 10 || phone.length > 15) return J({ error: "Enter a valid phone number." }, 400);
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return J({ error: "Enter a valid email address." }, 400);
+
+      // Same salted-hash per-IP cap used by analytics, so this can't be flooded.
+      const ip = request.headers.get("cf-connecting-ip") || "unknown";
+      const bucket = Math.floor(Date.now() / 3600000);
+      const key = (await hmac(APP_SECRET, "sub:" + ip)).slice(0, 24) + ":" + bucket;
+      try {
+        await db.run("insert into rate_counters (k, n, bucket) values (?, 1, ?) on conflict(k) do update set n = n + 1", key, bucket);
+        const row = await db.first("select n from rate_counters where k=?", key);
+        if (row && row.n > 10) return J({ ok: true });   // silently ignore floods
+      } catch (_) {}
+
+      const consent = String(body.consentText || "").slice(0, 400);
+      const ipHash = (await hmac(APP_SECRET, "ip:" + ip)).slice(0, 32);
+      await db.run(
+        `insert into subscribers (phone, email, consent_text, source, ip_hash) values (?, ?, ?, ?, ?)
+         on conflict(phone) do update set email=coalesce(nullif(excluded.email,''), subscribers.email), unsubscribed_at=null`,
+        phone, email || null, consent, String(body.source || "popup").slice(0, 40), ipHash
+      );
+      return J({ ok: true });
+    }
+
+    // ---- OWNER: the marketing list ----------------------------------------
+    if (path === "/api/owner/subscribers" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const rows = await db.all("select phone, email, created_at from subscribers where unsubscribed_at is null order by created_at desc limit 500");
+      const total = await db.first("select count(*) as n from subscribers where unsubscribed_at is null");
+      return J({ subscribers: rows, total: (total && total.n) || 0 });
+    }
+    if (path === "/api/owner/subscribers.csv" && method === "GET") {
+      if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const rows = await db.all("select phone, email, consent_text, created_at from subscribers where unsubscribed_at is null order by created_at desc");
+      const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+      const csv = ["phone,email,consent_text,subscribed_at"].concat(
+        rows.map((r) => [q(r.phone), q(r.email), q(r.consent_text), q(r.created_at)].join(","))
+      ).join("\n");
+      return new Response(csv, { status: 200, headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=luxury-peps-subscribers.csv", "Access-Control-Allow-Origin": "*" } });
     }
 
     // ---- PUBLIC: live stock for tracked products ---------------------------
