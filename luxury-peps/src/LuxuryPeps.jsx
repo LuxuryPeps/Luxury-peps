@@ -4461,6 +4461,7 @@ function OwnerPortal({ setPage }) {
   const [diag, setDiag] = useState(null);
   const [testEmailResult, setTestEmailResult] = useState("");
   const [clearMsg, setClearMsg] = useState("");
+  const [subs, setSubs] = useState(null);
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -4641,6 +4642,22 @@ function OwnerPortal({ setPage }) {
     } catch (_) { setClearMsg("Couldn't reach the server."); }
   };
 
+  const loadSubscribers = async (p) => {
+    if (!live) return;
+    try { const r = await ownerFetch("/api/owner/subscribers", { pin: p }); if (r.ok) setSubs(await r.json()); } catch (_) { /* ignore */ }
+  };
+  const exportSubscribersCsv = async () => {
+    try {
+      const res = await ownerFetch("/api/owner/subscribers.csv");
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "luxury-peps-subscribers.csv";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (_) { /* no-op */ }
+  };
   const loadDiagnostics = async () => {
     if (!live) return;
     setDiag("loading");
@@ -4712,8 +4729,9 @@ function OwnerPortal({ setPage }) {
     loadStats(pin);
     loadPromos(pin);
     loadReviews(pin);
+    loadSubscribers(pin);
   };
-  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); loadReviews(pin); } }, [authed]);
+  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); loadReviews(pin); loadSubscribers(pin); } }, [authed]);
 
   const markPaid = async (orderId) => {
     if (live) {
@@ -5144,6 +5162,34 @@ function OwnerPortal({ setPage }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Marketing list */}
+      {live && (
+        <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+            <Mail size={14} color="var(--gold-bright)" />
+            <div className="lp-eyebrow">Marketing list</div>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+            Signups from the site popup. Export to load into an SMS or email provider — the CSV includes
+            the consent wording and timestamp each person agreed to.
+          </p>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
+            <span className="lp-serif" style={{ fontSize: 26, color: "var(--gold-bright)" }}>{subs ? subs.total : "—"}</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>subscriber{subs && subs.total === 1 ? "" : "s"}</span>
+            <span style={{ flex: 1 }} />
+            <button className="lp-btn" onClick={exportSubscribersCsv} style={{ fontSize: 11.5 }}>Export CSV</button>
+          </div>
+          {subs && subs.subscribers && subs.subscribers.length > 0 && (
+            <div style={{ fontSize: 12.5, lineHeight: 1.9, color: "var(--muted)", borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+              {subs.subscribers.slice(0, 5).map((x, i) => (
+                <div key={i}>{x.phone}{x.email ? ` · ${x.email}` : ""} <span style={{ fontSize: 11 }}>{String(x.created_at).slice(0, 10)}</span></div>
+              ))}
+              {subs.total > 5 && <div style={{ fontSize: 11 }}>…and {subs.total - 5} more in the export.</div>}
+            </div>
+          )}
         </div>
       )}
 
@@ -6362,6 +6408,11 @@ function LuxuryPeps() {
   );
 }
 
+// The exact wording the subscriber agrees to. Stored verbatim with each signup:
+// TCPA compliance turns on being able to show WHAT was consented to and when,
+// not merely that you hold the number. Change the copy, change this constant.
+const SMS_CONSENT_TEXT = "By submitting, you agree to receive marketing texts from Luxury Peps. Message and data rates may apply. Reply STOP to unsubscribe at any time.";
+
 function NewsletterPopup({ defaultEmail, onClose, onSubscribed }) {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState(defaultEmail && defaultEmail !== "guest" ? defaultEmail : "");
@@ -6378,11 +6429,19 @@ function NewsletterPopup({ defaultEmail, onClose, onSubscribed }) {
 
     setLoading(true);
     try {
-      // Demo storage only. For production, send this to a real ESP/SMS provider
-      // (e.g. Klaviyo, Mailchimp, Twilio) from your backend instead of window.storage.
-      await window.storage.set(`subscriber:${phone.replace(/[^\d]/g, "")}`, JSON.stringify({
-        phone, email, optedInAt: Date.now(),
-      }), true);
+      if (BACKEND_LIVE) {
+        // Goes to the server. This used to write to window.storage — i.e. the
+        // visitor's own browser — so every signup was silently lost.
+        const res = await fetch(API_BASE + "/api/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, email, source: "popup", consentText: SMS_CONSENT_TEXT }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) { setError(d.error || "Something went wrong. Please try again."); setLoading(false); return; }
+      } else {
+        await window.storage.set(`subscriber:${phone.replace(/[^\d]/g, "")}`, JSON.stringify({ phone, email, optedInAt: Date.now() }), true);
+      }
       setDone(true);
       setTimeout(() => onSubscribed(), 1800);
     } catch (err) {
@@ -6440,8 +6499,7 @@ function NewsletterPopup({ defaultEmail, onClose, onSubscribed }) {
             </form>
 
             <p style={{ fontSize: 10.5, color: "var(--muted)", lineHeight: 1.6, marginTop: 18 }}>
-              By submitting, you agree to receive marketing texts from Luxury Peps. Message and data rates
-              may apply. Reply STOP to unsubscribe at any time.
+              {SMS_CONSENT_TEXT}
             </p>
           </>
         ) : (
