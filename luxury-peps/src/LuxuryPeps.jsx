@@ -3192,7 +3192,7 @@ function AnetHostedModal({ token, env, onApproved, onCancel }) {
         <form ref={formRef} action={payUrl} method="post" target="anetIframe">
           <input type="hidden" name="token" value={token} />
         </form>
-        <iframe name="anetIframe" title="Card payment" width={dispW} height={size.h} frameBorder="0" scrolling="no" style={{ border: "none", width: dispW, height: size.h, background: "#fff", borderRadius: 2 }} />
+        <iframe name="anetIframe" title="Card payment" width={dispW} height={size.h} frameBorder="0" scrolling="auto" style={{ border: "none", width: dispW, height: size.h, background: "#fff", borderRadius: 2 }} />
       </div>
     </div>
   );
