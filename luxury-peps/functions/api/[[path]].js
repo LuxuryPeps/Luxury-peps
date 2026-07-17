@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-17.1";
+const BACKEND_VERSION = "2026-07-17.2";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -778,7 +778,7 @@ export async function onRequest(context) {
           hostedPaymentSettings: {
             setting: [
               { settingName: "hostedPaymentReturnOptions", settingValue: JSON.stringify({ showReceipt: false }) },
-              { settingName: "hostedPaymentIFrameCommunicatorUrl", settingValue: JSON.stringify({ url: origin + "/AuthorizeNetIFrameCommunicator.html" }) },
+              { settingName: "hostedPaymentIFrameCommunicatorUrl", settingValue: JSON.stringify({ url: origin + "/AuthorizeNetIFrameCommunicator" }) },
               { settingName: "hostedPaymentButtonOptions", settingValue: JSON.stringify({ text: "Pay Now" }) },
               { settingName: "hostedPaymentOrderOptions", settingValue: JSON.stringify({ show: false }) },
               { settingName: "hostedPaymentPaymentOptions", settingValue: JSON.stringify({ cardCodeRequired: true, showCreditCard: true, showBankAccount: false }) },
