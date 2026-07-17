@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-16.1";
+const BACKEND_VERSION = "2026-07-17.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -262,7 +262,15 @@ export async function onRequest(context) {
   const path = url.pathname.replace(/\/+$/, "");
   const qs = url.searchParams;
   const method = request.method;
-  const body = method === "POST" ? await request.json().catch(() => ({})) : {};
+  // A request body can only be read once. The webhook needs the RAW text to
+  // verify its HMAC signature, while every other route wants parsed JSON — so
+  // read the text once here and derive both from it. Calling request.text()
+  // inside the webhook after this ran threw "Body has already been used",
+  // which the catch-all turned into a 500 on every single delivery. That is
+  // what got the webhook deactivated.
+  const rawBody = method === "POST" ? await request.text().catch(() => "") : "";
+  let body = {};
+  if (rawBody) { try { body = JSON.parse(rawBody); } catch (_) { body = {}; } }
 
   try {
     // ---- OWNER: archive abandoned checkouts --------------------------------
@@ -856,7 +864,7 @@ export async function onRequest(context) {
     }
 
     if (path === "/api/anet/webhook" && method === "POST") {
-      const raw = await request.text();
+      const raw = rawBody;
       const sigHeader = request.headers.get("x-anet-signature") || "";
       let sigOK = true;
       let note = "";
