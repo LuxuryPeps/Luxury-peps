@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-17.2";
+const BACKEND_VERSION = "2026-07-17.3";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -244,7 +244,10 @@ export async function onRequest(context) {
   await ensureSchema(db);
   const OWNER_PIN = env.OWNER_PIN || "";
   const APP_SECRET = env.APP_SECRET || "change-me";
-  const PREORDER = (env.PREORDER || "true").toLowerCase() !== "false";
+  // Defaults to FALSE now that stock ships from hand. This only drives the
+  // owner dashboard's status label — customer-facing pre-order UI is controlled
+  // by SITE_CONFIG.preorder in the frontend. Set PREORDER=true to flip it back.
+  const PREORDER = String(env.PREORDER || "false").toLowerCase() === "true";
   const OWNER_EMAIL = ownerEmail(env);
   const PAY = { bank: env.PAY_BANK || "", cashapp: env.PAY_CASHAPP || "", zelle: env.PAY_ZELLE || "", crypto: env.PAY_CRYPTO || "" };
   // The owner PIN now travels in the X-Owner-Pin header instead of the URL:
