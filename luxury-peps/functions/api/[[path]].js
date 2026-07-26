@@ -20,11 +20,14 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-17.3";
+const BACKEND_VERSION = "2026-07-18.2";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
 const OWNER_EMAIL_FALLBACK = "hello@luxurypeps.com";
+// Flat discount a customer receives for using ANY affiliate code, independent of
+// what that affiliate earns in commission.
+const AFFILIATE_CUSTOMER_DISCOUNT = 0.10;
 // Analytics: only these events are accepted, and only this many per IP per hour.
 // A real visitor browsing hard might hit ~60; 200 leaves plenty of headroom.
 const TRACK_EVENTS = new Set(["page_view", "product_view", "checkout_start"]);
@@ -40,7 +43,7 @@ const J = (obj, status = 200) => new Response(JSON.stringify(obj), {
   headers: {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Owner-Pin",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Owner-Pin, X-Marketing-Pin",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   },
 });
@@ -56,8 +59,14 @@ function priceOrder(items, ambassadorPct, promo) {
     subtotal += line;
     lines.push({ variantId: it.variantId, productId: String(it.variantId).split("-")[0], name: v.name, qty, unitCents: v.cents, lineCents: line });
   }
-  const pct = ambassadorPct || 0;
-  const discount = pct ? Math.round(subtotal * pct) : 0;   // ambassador discount == commission
+  // Customer discount and affiliate commission are now SEPARATE:
+  //  - the shopper always gets AFFILIATE_CUSTOMER_DISCOUNT (10%) for using a code
+  //  - the affiliate earns their own rate (ambassadorPct: 0.10 or 0.15), which the
+  //    customer never sees and which is what you owe the affiliate.
+  const commRate = ambassadorPct || 0;
+  const usingCode = commRate > 0;
+  const discount = usingCode ? Math.round(subtotal * AFFILIATE_CUSTOMER_DISCOUNT) : 0;
+  const commission = usingCode ? Math.round(subtotal * commRate) : 0;
   const afterAmb = Math.max(0, subtotal - discount);
   // Promo stacks on top of any ambassador discount, applied to the remainder.
   let promoDiscount = 0;
@@ -71,7 +80,7 @@ function priceOrder(items, ambassadorPct, promo) {
   // ("free shipping on orders over $150") and the cart progress bar. Basing it
   // on the post-discount figure silently charged shipping the customer never saw.
   const shipping = subtotal > 0 && !freeShip && subtotal < FREE_SHIP ? FLAT_SHIP : 0;
-  return { lines, subtotal, discount, promoDiscount, shipping, total: afterDiscount + shipping, commission: discount };
+  return { lines, subtotal, discount, promoDiscount, shipping, total: afterDiscount + shipping, commission };
 }
 
 // Validate a promo code server-side. Never trust the browser's copy.
@@ -260,6 +269,21 @@ export async function onRequest(context) {
     const supplied = String(pin || "").trim() || String(headerPin || "").trim();
     return supplied === OWNER_PIN;
   };
+
+  // Separate login for a marketing contractor. Scoped to marketing only: no
+  // customer names/addresses, no marking paid/shipped, no payouts, no inbox,
+  // no diagnostics. Set MARKETING_PIN in Cloudflare to enable; unset = the
+  // marketing portal simply can't be opened.
+  const MARKETING_PIN = env.MARKETING_PIN || "";
+  const marketingHeaderPin = request.headers.get("x-marketing-pin") || "";
+  const marketingOK = (pin) => {
+    if (!MARKETING_PIN) return false;
+    const supplied = String(pin || "").trim() || String(marketingHeaderPin || "").trim();
+    return supplied === MARKETING_PIN;
+  };
+  // Commission is limited to these two rates, enforced HERE rather than trusting
+  // the dropdown — the request can be edited, this can't.
+  const ALLOWED_COMMISSION = new Set([0.10, 0.15]);
 
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "");
@@ -642,6 +666,118 @@ export async function onRequest(context) {
       const amt = Math.max(0, Math.round(Number(body.amountCents) || 0));
       if (!body.code || amt <= 0) return J({ error: "bad request" }, 400);
       await db.run("insert into payouts (code, amount_cents, note) values (?, ?, ?)", upper(body.code), amt, body.note || "Manual payout");
+      return J({ ok: true });
+    }
+
+    // ==== MARKETING PORTAL (scoped contractor login) =======================
+
+    // Aggregate performance only — revenue, orders, conversion, best sellers.
+    // No customer names, emails, or addresses are ever returned here.
+    if (path === "/api/marketing/overview" && method === "GET") {
+      if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const paid = await db.all("select total_cents from orders where status in ('paid','shipped') and coalesce(archived,0)=0");
+      const revenueCents = paid.reduce((n, o) => n + (Number(o.total_cents) || 0), 0);
+      const subCount = await db.first("select count(*) as n from subscribers where unsubscribed_at is null");
+      const best = await db.all(`select oi.product_id, sum(oi.qty) as qty from order_items oi
+        join orders o on o.reference = oi.order_ref
+        where o.status in ('paid','shipped') and coalesce(o.archived,0)=0
+        group by oi.product_id order by qty desc limit 6`);
+      return J({
+        orders: paid.length,
+        revenueCents,
+        subscriberCount: (subCount && subCount.n) || 0,   // COUNT ONLY — no list, no export
+        bestSellers: best,
+      });
+    }
+
+    // Traffic — same aggregates as the owner analytics view.
+    if (path === "/api/marketing/traffic" && method === "GET") {
+      if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      try { await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))"); } catch (_) {}
+      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-13 days') group by day");
+      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-13 days')");
+      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-13 days') group by product_id order by views desc limit 8");
+      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-13 days') group by referrer order by hits desc limit 10");
+      return J({
+        views: (totals && totals.views) || 0,
+        productViews: (totals && totals.productViews) || 0,
+        checkouts: (totals && totals.checkouts) || 0,
+        series: series14(dayRows, "views"),
+        topProducts, referrers,
+      });
+    }
+
+    // Affiliates — list WITH each PIN (the marketer shares these logins), plus
+    // each code's sales and what's owed. No payout actions live here.
+    if (path === "/api/marketing/affiliates" && method === "GET") {
+      if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const rows = await db.all("select code, creator, pct, portal_pin, builtin from ambassadors where active=1 order by builtin desc, code");
+      const out = [];
+      for (const a of rows) {
+        const sales = await db.first("select coalesce(sum(total_cents),0) as revenue, count(*) as orders from orders where code=? and status in ('paid','shipped') and coalesce(archived,0)=0", a.code);
+        const owedRow = await db.first("select coalesce(sum(case when paid_at is not null then commission_cents else 0 end),0) as owed from orders where code=? and coalesce(archived,0)=0", a.code);
+        const paidRow = await db.first("select coalesce(sum(amount_cents),0) as paid from payouts where code=?", a.code);
+        out.push({
+          code: a.code, creator: a.creator, pct: a.pct, portalPin: a.portal_pin, builtin: !!a.builtin,
+          orders: (sales && sales.orders) || 0,
+          revenueCents: (sales && sales.revenue) || 0,
+          owedCents: Math.max(0, ((owedRow && owedRow.owed) || 0) - ((paidRow && paidRow.paid) || 0)),
+        });
+      }
+      return J({ affiliates: out });
+    }
+
+    // Create an affiliate. Commission is clamped server-side to 10% or 15%.
+    if (path === "/api/marketing/affiliates" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(body.code);
+      const creator = String(body.creator || "").trim();
+      const pct = Number(body.pct);
+      const portalPin = String(body.portalPin || "").trim();
+      if (!creator) return J({ error: "Name required." }, 400);
+      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (!ALLOWED_COMMISSION.has(pct)) return J({ error: "Commission must be 10% or 15%." }, 400);
+      if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
+      if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code already exists." }, 409);
+      await db.run("insert into ambassadors (code, creator, pct, portal_pin, builtin, active) values (?, ?, ?, ?, 0, 1)", code, creator, pct, portalPin);
+      return J({ ok: true });
+    }
+
+    // Set / reset an affiliate's PIN (the marketer manages affiliate logins).
+    if (path === "/api/marketing/affiliate-pin" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(body.code);
+      const portalPin = String(body.portalPin || "").trim();
+      if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
+      const r = await db.run("update ambassadors set portal_pin=? where code=? and active=1", portalPin, code);
+      const changes = (r && r.meta && typeof r.meta.changes === "number") ? r.meta.changes : 1;
+      if (!changes) return J({ error: "No such affiliate." }, 404);
+      return J({ ok: true });
+    }
+
+    // Promo codes — list, and create constrained to 10% off only.
+    if (path === "/api/marketing/promos" && method === "GET") {
+      if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const rows = await db.all("select code, kind, value, active, expires_at, max_uses, used_count from promos order by rowid desc");
+      return J({ promos: rows });
+    }
+    if (path === "/api/marketing/promos" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(body.code);
+      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (await db.first("select 1 from promos where code=?", code)) return J({ error: "That code already exists." }, 409);
+      // Percentage is constrained server-side to 5-30 in steps of 5, so a tampered
+      // request can't create (say) a 90%-off code even though the UI is a dropdown.
+      const pctOff = Math.round(Number(body.value) / 5) * 5;
+      if (!(pctOff >= 5 && pctOff <= 30)) return J({ error: "Discount must be 5%–30%." }, 400);
+      const expires = body.expiresAt ? String(body.expiresAt).slice(0, 10) : null;
+      const maxUses = body.maxUses ? Math.max(1, parseInt(body.maxUses, 10) || 0) : null;
+      await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, 'pct', ?, 1, ?, ?)", code, pctOff, expires, maxUses);
+      return J({ ok: true });
+    }
+    if (path === "/api/marketing/promos/toggle" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      await db.run("update promos set active = case when active=1 then 0 else 1 end where code=?", upper(body.code));
       return J({ ok: true });
     }
 
