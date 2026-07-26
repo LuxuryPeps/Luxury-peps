@@ -4566,27 +4566,52 @@ function MarketingPortal({ setPage }) {
         Aggregate figures only — individual customer details aren't shown here.
       </p>
 
-      {/* Traffic detail */}
+      {/* Traffic — mirrors the owner portal: trend chart + counts + lists */}
       <section style={{ marginBottom: 44 }}>
-        <h2 className="lp-serif" style={{ fontSize: 21, marginBottom: 16 }}>Traffic</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 30 }} className="lp-mk-two">
-          <div>
-            <div className="lp-eyebrow" style={{ marginBottom: 12 }}>Most viewed</div>
-            {traffic && traffic.topProducts && traffic.topProducts.length > 0 ? traffic.topProducts.map((r) => (
-              <div key={r.product_id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0", borderBottom: "1px solid var(--line)" }}>
-                <span>{nameFor(r.product_id)}</span><span style={{ color: "var(--muted)" }}>{r.views}</span>
+        {(() => {
+          const series = (traffic && traffic.series ? traffic.series : []).map((r) => r.views || 0);
+          const labels = (traffic && traffic.series ? traffic.series : []).map((r) => String(r.day).slice(5));
+          const conv = traffic && traffic.checkouts > 0 ? Math.round((((ov && ov.orders) || 0) / traffic.checkouts) * 100) : null;
+          return (
+            <div style={{ border: "1px solid var(--line)", padding: "18px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+                <TrendingUp size={14} color="var(--gold-bright)" />
+                <div className="lp-eyebrow">Traffic · last 30 days</div>
               </div>
-            )) : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No product views yet.</p>}
-          </div>
-          <div>
-            <div className="lp-eyebrow" style={{ marginBottom: 12 }}>Where visitors come from</div>
-            {traffic && traffic.referrers && traffic.referrers.length > 0 ? traffic.referrers.map((r, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0", borderBottom: "1px solid var(--line)" }}>
-                <span style={{ wordBreak: "break-all" }}>{r.referrer}</span><span style={{ color: "var(--muted)" }}>{r.hits}</span>
+              <div style={{ display: "flex", gap: 18, fontSize: 11.5, color: "var(--muted)", marginBottom: 14, flexWrap: "wrap" }}>
+                <span>Visits <b style={{ color: "var(--cream)" }}>{(traffic && traffic.views) || 0}</b></span>
+                <span>Product views <b style={{ color: "var(--cream)" }}>{(traffic && traffic.productViews) || 0}</b></span>
+                <span>Reached checkout <b style={{ color: "var(--cream)" }}>{(traffic && traffic.checkouts) || 0}</b></span>
+                {conv !== null && <span>Completed <b style={{ color: "var(--gold-bright)" }}>{conv}%</b></span>}
               </div>
-            )) : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No referrer data yet. Most traffic is showing as direct.</p>}
-          </div>
-        </div>
+              {series.some((v) => v > 0)
+                ? <SparkBars data={series} labels={labels} format={(v) => String(v)} accent="var(--gold)" />
+                : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No visits recorded in the last 30 days yet.</p>}
+              {traffic && traffic.topProducts && traffic.topProducts.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Most viewed</div>
+                  {traffic.topProducts.map((r, i) => (
+                    <div key={r.product_id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)", fontSize: 13 }}>
+                      <span style={{ color: "var(--cream)" }}>{i + 1}. {nameFor(r.product_id)}</span>
+                      <span style={{ color: "var(--muted)" }}>{r.views} view{r.views === 1 ? "" : "s"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {traffic && traffic.referrers && traffic.referrers.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Where visitors came from</div>
+                  {traffic.referrers.map((r, i) => (
+                    <div key={r.referrer} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: i === 0 ? "none" : "1px solid var(--line)", fontSize: 13 }}>
+                      <span style={{ color: "var(--cream)", wordBreak: "break-all" }}>{r.referrer}</span>
+                      <span style={{ color: "var(--muted)" }}>{r.hits}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </section>
 
       {/* Affiliates */}
