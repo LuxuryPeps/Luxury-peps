@@ -1255,6 +1255,7 @@ function Footer({ setPage }) {
               <button className="lp-nav-link" onClick={() => setPage("ambassador")} style={{ textAlign: "left" }}>Ambassador Program</button>
               <button className="lp-nav-link" onClick={() => setPage("portal")} style={{ textAlign: "left" }}>Ambassador Portal</button>
               <button className="lp-nav-link" onClick={() => setPage("owner")} style={{ textAlign: "left", opacity: 0.6 }}>Owner</button>
+              <button className="lp-nav-link" onClick={() => setPage("marketing")} style={{ textAlign: "left", opacity: 0.6 }}>Marketing</button>
               <p style={{ fontSize: 13, color: "var(--muted)" }}>{SITE_CONFIG.contactEmail}</p>
             </div>
           </div>
@@ -6944,7 +6945,17 @@ ${catalogContext}`;
 }
 
 function LuxuryPepsStore({ userEmail, onLogout }) {
-  const [page, setPage] = useState("home");
+  // Derive the initial page from the URL path so private pages like /marketing,
+  // /owner and /portal can be opened directly by typing the address — they have
+  // no public menu links. Falls back to home for "/" or anything unknown.
+  const initialPage = (() => {
+    try {
+      const seg = (window.location.pathname || "/").replace(/^\/+|\/+$/g, "").toLowerCase();
+      const known = ["home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","batch","compare","ambassador","portal","owner","marketing","guide","review","status"];
+      return known.includes(seg) ? seg : "home";
+    } catch (_) { return "home"; }
+  })();
+  const [page, setPage] = useState(initialPage);
   // LIVE_STOCK is module-level (isSoldOut is a plain function), so bump this once
   // the fetch lands to trigger a single re-render with real stock applied.
   const [, setStockTick] = useState(0);
