@@ -2626,7 +2626,21 @@ function Checkout({ cart, setPage, addToCart }) {
   useEffect(() => {
     (async () => {
       try {
-        const ref = new URLSearchParams(window.location.search).get("ref");
+        const params = new URLSearchParams(window.location.search);
+        // ?ref=CODE applies an affiliate code; ?promo=CODE applies a store promo.
+        const ref = params.get("ref");
+        const promoParam = params.get("promo");
+        if (promoParam && !ref) {
+          const pk = promoParam.trim().toUpperCase();
+          if (BACKEND_LIVE) {
+            try {
+              const pr = await fetch(API_BASE + "/api/promo/" + encodeURIComponent(pk));
+              const pd = await pr.json().catch(() => ({}));
+              if (pd && pd.valid) setAppliedPromo({ code: pd.code, kind: pd.kind, value: pd.value, label: pd.label });
+            } catch (_) { /* ignore */ }
+          }
+          return;
+        }
         if (!ref) return;
         const key = ref.trim().toUpperCase();
         if (BACKEND_LIVE) {
@@ -4427,6 +4441,20 @@ function MarketingPortal({ setPage }) {
   const [affs, setAffs] = useState([]);
   const [promos, setPromos] = useState([]);
   const [msg, setMsg] = useState("");
+  const [days, setDays] = useState(30);          // traffic window: 7 / 30 / 90
+  const [copied, setCopied] = useState("");       // which link was just copied
+  const [openAff, setOpenAff] = useState(null);   // expanded affiliate code
+
+  const siteOrigin = typeof window !== "undefined" ? window.location.origin : "https://luxurypeps.com";
+  const affiliateLink = (code) => `${siteOrigin}/?ref=${encodeURIComponent(code)}`;
+  const promoLink = (code) => `${siteOrigin}/?promo=${encodeURIComponent(code)}`;
+  const copyLink = async (url, tag) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(url);
+      else { const t = document.createElement("textarea"); t.value = url; document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t); }
+      setCopied(tag); setTimeout(() => setCopied(""), 1600);
+    } catch (_) { setMsg("Couldn't copy — long-press the link to copy it manually."); }
+  };
 
   // Marketing PIN travels in a header, never the URL.
   const mFetch = (path, { pin: pinArg, ...opts } = {}) =>
@@ -4436,7 +4464,7 @@ function MarketingPortal({ setPage }) {
     try {
       const [o, t, a, pr] = await Promise.all([
         mFetch("/api/marketing/overview", { pin: p }),
-        mFetch("/api/marketing/traffic", { pin: p }),
+        mFetch(`/api/marketing/traffic?days=${days}`, { pin: p }),
         mFetch("/api/marketing/affiliates", { pin: p }),
         mFetch("/api/marketing/promos", { pin: p }),
       ]);
@@ -4458,6 +4486,24 @@ function MarketingPortal({ setPage }) {
       await loadAll(pin);
     } catch (_) { setErr("Couldn't sign in. Try again."); }
     setLoading(false);
+  };
+
+  const reloadTraffic = async (d) => {
+    try { const r = await mFetch(`/api/marketing/traffic?days=${d}`, { pin }); if (r.ok) setTraffic(await r.json()); } catch (_) {}
+  };
+  useEffect(() => { if (authed) reloadTraffic(days); /* eslint-disable-next-line */ }, [days]);
+
+  // ---- affiliate pause / reactivate ----
+  const toggleAffiliate = async (code) => {
+    setMsg("");
+    const r = await mFetch("/api/marketing/affiliate-toggle", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(d.error || "Couldn't update that affiliate."); return; }
+    setMsg(d.active ? `${code} reactivated.` : `${code} paused.`);
+    loadAll(pin);
   };
 
   // ---- affiliate create form ----
@@ -4574,9 +4620,16 @@ function MarketingPortal({ setPage }) {
           const conv = traffic && traffic.checkouts > 0 ? Math.round((((ov && ov.orders) || 0) / traffic.checkouts) * 100) : null;
           return (
             <div style={{ border: "1px solid var(--line)", padding: "18px 20px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-                <TrendingUp size={14} color="var(--gold-bright)" />
-                <div className="lp-eyebrow">Traffic · last 30 days</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <TrendingUp size={14} color="var(--gold-bright)" />
+                  <div className="lp-eyebrow">Traffic · last {days} days</div>
+                </div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[7, 30, 90].map((d) => (
+                    <button key={d} onClick={() => setDays(d)} style={{ background: days === d ? "var(--gold)" : "none", color: days === d ? "var(--bg)" : "var(--muted)", border: "1px solid " + (days === d ? "var(--gold)" : "var(--line)"), fontSize: 11, padding: "4px 10px", cursor: "pointer", fontWeight: days === d ? 600 : 400 }}>{d}d</button>
+                  ))}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 18, fontSize: 11.5, color: "var(--muted)", marginBottom: 14, flexWrap: "wrap" }}>
                 <span>Visits <b style={{ color: "var(--cream)" }}>{(traffic && traffic.views) || 0}</b></span>
@@ -4586,7 +4639,7 @@ function MarketingPortal({ setPage }) {
               </div>
               {series.some((v) => v > 0)
                 ? <SparkBars data={series} labels={labels} format={(v) => String(v)} accent="var(--gold)" />
-                : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No visits recorded in the last 30 days yet.</p>}
+                : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No visits recorded in the last {days} days yet.</p>}
               {traffic && traffic.topProducts && traffic.topProducts.length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Most viewed</div>
@@ -4633,18 +4686,49 @@ function MarketingPortal({ setPage }) {
             </thead>
             <tbody>
               {affs.map((a) => (
-                <tr key={a.code} style={{ borderBottom: "1px solid var(--line)" }}>
-                  <td style={{ padding: "10px 12px", color: "var(--gold-bright)", fontWeight: 600 }}>{a.code}</td>
+                <React.Fragment key={a.code}>
+                <tr style={{ borderBottom: openAff === a.code ? "none" : "1px solid var(--line)", opacity: a.active ? 1 : 0.5 }}>
+                  <td style={{ padding: "10px 12px", color: "var(--gold-bright)", fontWeight: 600 }}>
+                    {a.code}{!a.active && <span style={{ fontSize: 10, color: "var(--muted)", marginLeft: 6, letterSpacing: "0.04em" }}>PAUSED</span>}
+                  </td>
                   <td style={{ padding: "10px 12px" }}>{a.creator}</td>
                   <td style={{ padding: "10px 12px" }}>{Math.round(a.pct * 100)}%</td>
                   <td style={{ padding: "10px 12px", fontVariantNumeric: "tabular-nums", userSelect: "all" }}>{a.portalPin || "—"}</td>
                   <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{a.orders}</td>
                   <td style={{ padding: "10px 12px" }}>{money(a.revenueCents)}</td>
                   <td style={{ padding: "10px 12px", color: "var(--gold-bright)" }}>{money(a.owedCents)}</td>
-                  <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                  <td style={{ padding: "10px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button onClick={() => setOpenAff(openAff === a.code ? null : a.code)} title="Details" style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontSize: 11, padding: "5px 9px", cursor: "pointer", marginRight: 4 }}>{openAff === a.code ? "Hide" : "Details"}</button>
                     <button onClick={() => resetAffPin(a.code)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontSize: 11, padding: "5px 9px", cursor: "pointer" }}>Set PIN</button>
                   </td>
                 </tr>
+                {openAff === a.code && (
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td colSpan={8} style={{ padding: "0 12px 16px" }}>
+                      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", padding: "14px 16px" }}>
+                        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14, fontSize: 12.5 }}>
+                          <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Paid orders</div><div style={{ color: "var(--cream)", fontSize: 16 }}>{a.orders}</div></div>
+                          <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Revenue driven</div><div style={{ color: "var(--cream)", fontSize: 16 }}>{money(a.revenueCents)}</div></div>
+                          <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Commission owed</div><div style={{ color: "var(--gold-bright)", fontSize: 16 }}>{money(a.owedCents)}</div></div>
+                          <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Commission rate</div><div style={{ color: "var(--cream)", fontSize: 16 }}>{Math.round(a.pct * 100)}%</div></div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Share link:</span>
+                          <code style={{ fontSize: 11.5, color: "var(--gold)", background: "var(--bg)", padding: "4px 8px", border: "1px solid var(--line)", wordBreak: "break-all" }}>{affiliateLink(a.code)}</code>
+                          <button onClick={() => copyLink(affiliateLink(a.code), "aff-" + a.code)} style={{ background: copied === "aff-" + a.code ? "var(--gold)" : "none", color: copied === "aff-" + a.code ? "var(--bg)" : "var(--gold-bright)", border: "1px solid var(--gold)", fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>{copied === "aff-" + a.code ? "Copied" : "Copy"}</button>
+                          <span style={{ flex: 1 }} />
+                          {!a.builtin && (
+                            <button onClick={() => toggleAffiliate(a.code)} style={{ background: "none", border: "1px solid " + (a.active ? "var(--line)" : "var(--gold)"), color: a.active ? "var(--muted)" : "var(--gold-bright)", fontSize: 11, padding: "5px 11px", cursor: "pointer" }}>{a.active ? "Pause affiliate" : "Reactivate"}</button>
+                          )}
+                        </div>
+                        <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
+                          The share link applies this code automatically at checkout — the customer gets 10% off without typing anything.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
               {affs.length === 0 && <tr><td colSpan={8} style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 12.5 }}>No affiliates yet.</td></tr>}
             </tbody>
@@ -4694,16 +4778,19 @@ function MarketingPortal({ setPage }) {
         {promos.length > 0 ? (
           <div style={{ border: "1px solid var(--line)" }}>
             {promos.map((pr) => (
-              <div key={pr.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderBottom: "1px solid var(--line)", gap: 12 }}>
-                <div>
+              <div key={pr.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderBottom: "1px solid var(--line)", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 150 }}>
                   <span style={{ color: "var(--gold-bright)", fontWeight: 600, fontSize: 13.5 }}>{pr.code}</span>
                   <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10 }}>
                     {pr.kind === "pct" ? `${pr.value}% off` : pr.kind} · {pr.used_count || 0} used{pr.max_uses ? ` / ${pr.max_uses}` : ""}
                   </span>
                 </div>
-                <button onClick={() => togglePromo(pr.code)} style={{ background: "none", border: "1px solid var(--line)", color: pr.active ? "var(--gold-bright)" : "var(--muted)", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>
-                  {pr.active ? "Active" : "Paused"}
-                </button>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={() => copyLink(promoLink(pr.code), "promo-" + pr.code)} title="Copy share link" style={{ background: copied === "promo-" + pr.code ? "var(--gold)" : "none", color: copied === "promo-" + pr.code ? "var(--bg)" : "var(--gold-bright)", border: "1px solid var(--gold)", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>{copied === "promo-" + pr.code ? "Copied" : "Copy link"}</button>
+                  <button onClick={() => togglePromo(pr.code)} style={{ background: "none", border: "1px solid var(--line)", color: pr.active ? "var(--gold-bright)" : "var(--muted)", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>
+                    {pr.active ? "Active" : "Paused"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
