@@ -46,18 +46,18 @@ const SITE_CONFIG = {
 };
 
 // ── Creator / affiliate codes ──────────────────────────────────────────────
-// Each code gives the customer 10% off and earns the creator a 10% commission
+// Each affiliate code gives the CUSTOMER a flat 10% off. The affiliate earns
+// their own commission (10% or 15%) separately — the customer never sees it.
 // (commission is tracked server-side per order). Keys must be UPPERCASE.
 // Replace these examples with your real creators; keep them all at 0.10.
 const CREATOR_CODES = {
-  MORGAN11:  { creator: "Madden Morgan",  pct: 0.10 },
-  MATTLIFTZ: { creator: "Matthew Daniel", pct: 0.10 },
+  // Affiliate codes are managed in the owner and marketing portals and validated
+  // server-side against the database at checkout. None are hard-coded here.
 };
 // Per-code PIN required to open the ambassador portal. Real enforcement is
 // server-side (routes/creator.js); this copy powers the preview build.
 const CREATOR_PINS = {
-  MORGAN11:  "1234",
-  MATTLIFTZ: "1234",
+  // Portal PINs are stored per-affiliate in the database; none are hard-coded.
 };
 
 // ── Owner-added ambassadors ────────────────────────────────────────────────
@@ -149,6 +149,7 @@ const FONTS = (
     }
     .lp-trust-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
     @media (max-width: 720px) { .lp-trust-grid { grid-template-columns: 1fr; gap: 26px; text-align: center; } }
+    @media (max-width: 640px) { .lp-mk-two { grid-template-columns: 1fr !important; } }
     .lp-eyebrow {
       font-family: 'Inter', sans-serif;
       letter-spacing: 0.18em;
@@ -2642,7 +2643,10 @@ function Checkout({ cart, setPage, addToCart }) {
   // Rounding in whole dollars diverged from the server and could show the
   // customer a total different from the one actually charged.
   const subtotalCents = Math.round(subtotal * 100);
-  const creatorDiscountCents = appliedCode ? Math.round(subtotalCents * appliedCode.pct) : 0;
+  // Flat 10% for using any affiliate code — must match the server's
+  // AFFILIATE_CUSTOMER_DISCOUNT, or the shown total won't equal the charged total.
+  const AFFILIATE_CUSTOMER_DISCOUNT = 0.10;
+  const creatorDiscountCents = appliedCode ? Math.round(subtotalCents * AFFILIATE_CUSTOMER_DISCOUNT) : 0;
   const afterAmbCents = Math.max(0, subtotalCents - creatorDiscountCents);
   const promoDiscountCents = !appliedPromo ? 0
     : appliedPromo.kind === "amount" ? Math.min(Math.max(0, appliedPromo.value), afterAmbCents)
@@ -4195,14 +4199,13 @@ function buildSampleData() {
       { name: "Ipamorelin", qty: 8 }, { name: "TB-500", qty: 6 }, { name: "GHK-Cu", qty: 5 },
     ],
     byCreator: [
-      { creator_code: "MORGAN11", orders: 6, sales_cents: 62000, commission_cents: 6200 },
-      { creator_code: "MATTLIFTZ", orders: 4, sales_cents: 41000, commission_cents: 4100 },
+
     ],
     paidOutByCode: {},
     recent: [
-      { id: "LP-10427", creator_code: "MORGAN11", status: "paid", total_cents: 12000 },
+      { id: "LP-10427", status: "paid", total_cents: 12000 },
       { id: "LP-10426", status: "paid", total_cents: 9000 },
-      { id: "LP-10425", creator_code: "MATTLIFTZ", status: "awaiting_payment", total_cents: 13500 },
+      { id: "LP-10425", status: "awaiting_payment", total_cents: 13500 },
       { id: "LP-10424", status: "paid", total_cents: 4500 },
       { id: "LP-10423", status: "paid", total_cents: 8000 },
     ],
@@ -4409,6 +4412,279 @@ function InventoryPanel({ inventory, setInventory, threshold, setThreshold }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MarketingPortal({ setPage }) {
+  const [pin, setPin] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [ov, setOv] = useState(null);
+  const [traffic, setTraffic] = useState(null);
+  const [affs, setAffs] = useState([]);
+  const [promos, setPromos] = useState([]);
+  const [msg, setMsg] = useState("");
+
+  // Marketing PIN travels in a header, never the URL.
+  const mFetch = (path, { pin: pinArg, ...opts } = {}) =>
+    fetch(API_BASE + path, { ...opts, headers: { ...(opts.headers || {}), "X-Marketing-Pin": String(pinArg || pin || "") } });
+
+  const loadAll = async (p) => {
+    try {
+      const [o, t, a, pr] = await Promise.all([
+        mFetch("/api/marketing/overview", { pin: p }),
+        mFetch("/api/marketing/traffic", { pin: p }),
+        mFetch("/api/marketing/affiliates", { pin: p }),
+        mFetch("/api/marketing/promos", { pin: p }),
+      ]);
+      if (o.ok) setOv(await o.json());
+      if (t.ok) setTraffic(await t.json());
+      if (a.ok) setAffs((await a.json()).affiliates || []);
+      if (pr.ok) setPromos((await pr.json()).promos || []);
+    } catch (_) { /* ignore */ }
+  };
+
+  const login = async (e) => {
+    e && e.preventDefault();
+    setErr(""); setLoading(true);
+    try {
+      const r = await mFetch("/api/marketing/overview", { pin });
+      if (r.status === 401) { setErr("Incorrect PIN."); setLoading(false); return; }
+      if (!r.ok) { setErr("Couldn't sign in. Try again."); setLoading(false); return; }
+      setAuthed(true);
+      await loadAll(pin);
+    } catch (_) { setErr("Couldn't sign in. Try again."); }
+    setLoading(false);
+  };
+
+  // ---- affiliate create form ----
+  const [nCode, setNCode] = useState("");
+  const [nName, setNName] = useState("");
+  const [nPct, setNPct] = useState("0.10");
+  const [nPin, setNPin] = useState("");
+  const createAffiliate = async () => {
+    setMsg("");
+    const r = await mFetch("/api/marketing/affiliates", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: nCode, creator: nName, pct: Number(nPct), portalPin: nPin }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(d.error || "Couldn't create affiliate."); return; }
+    setNCode(""); setNName(""); setNPin(""); setNPct("0.10"); setMsg("Affiliate created.");
+    loadAll(pin);
+  };
+  const resetAffPin = async (code) => {
+    const np = window.prompt(`New PIN for ${code} (4+ digits):`, "");
+    if (np == null) return;
+    const r = await mFetch("/api/marketing/affiliate-pin", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, portalPin: String(np).trim() }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setMsg(r.ok ? `PIN updated for ${code}.` : (d.error || "Couldn't update PIN."));
+    if (r.ok) loadAll(pin);
+  };
+
+  // ---- promo create ----
+  const [pCode, setPCode] = useState("");
+  const [pOff, setPOff] = useState("10");
+  const createPromo = async () => {
+    setMsg("");
+    const r = await mFetch("/api/marketing/promos", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: pCode, value: Number(pOff) }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(d.error || "Couldn't create code."); return; }
+    setPCode(""); setPOff("10"); setMsg(`Promo code created (${pOff}% off).`);
+    loadAll(pin);
+  };
+  const togglePromo = async (code) => {
+    await mFetch("/api/marketing/promos/toggle", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    loadAll(pin);
+  };
+
+  const money = (c) => "$" + (Math.round(c || 0) / 100).toFixed(2);
+  const nameFor = (id) => { const p = PRODUCTS.find((x) => x.id === id); return p ? p.name : id; };
+
+  if (!authed) {
+    return (
+      <div className="lp-fade" style={{ maxWidth: 420, margin: "0 auto", padding: "90px 28px" }}>
+        <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Marketing</div>
+        <h1 className="lp-serif" style={{ fontSize: 32, fontWeight: 400, marginBottom: 8 }}>Marketing portal</h1>
+        <p style={{ color: "var(--muted)", fontSize: 14, marginBottom: 26, lineHeight: 1.7 }}>
+          Enter your marketing PIN to view traffic, manage affiliates and promo codes, and track performance.
+        </p>
+        <form onSubmit={login}>
+          <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)}
+            placeholder="Marketing PIN" autoFocus
+            style={{ width: "100%", fontSize: 15, padding: "12px 14px", marginBottom: 12 }} />
+          {err && <p style={{ color: "#e0a0a0", fontSize: 13, marginBottom: 12 }}>{err}</p>}
+          <button type="submit" className="lp-btn lp-btn-solid" disabled={loading} style={{ width: "100%" }}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  const kpi = (label, val) => (
+    <div style={{ border: "1px solid var(--line)", padding: "16px 18px", flex: "1 1 140px" }}>
+      <div className="lp-serif" style={{ fontSize: 26, color: "var(--gold-bright)", lineHeight: 1 }}>{val}</div>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, letterSpacing: "0.02em" }}>{label}</div>
+    </div>
+  );
+
+  const convRate = traffic && traffic.views ? ((((ov && ov.orders) || 0) / traffic.views) * 100).toFixed(1) + "%" : "—";
+
+  return (
+    <div className="lp-fade" style={{ maxWidth: 920, margin: "0 auto", padding: "56px 28px 100px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <div>
+          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Marketing</div>
+          <h1 className="lp-serif" style={{ fontSize: 30, fontWeight: 400 }}>Performance</h1>
+        </div>
+        <button className="lp-btn" onClick={() => { setAuthed(false); setPin(""); }} style={{ fontSize: 12 }}>Sign out</button>
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 26 }}>Last 14 days</p>
+
+      {/* KPIs */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        {kpi("Revenue", money(ov && ov.revenueCents))}
+        {kpi("Orders", (ov && ov.orders) || 0)}
+        {kpi("Visits", (traffic && traffic.views) || 0)}
+        {kpi("Conversion", convRate)}
+        {kpi("Subscribers", (ov && ov.subscriberCount) || 0)}
+      </div>
+      <p style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 40 }}>
+        Aggregate figures only — individual customer details aren't shown here.
+      </p>
+
+      {/* Traffic detail */}
+      <section style={{ marginBottom: 44 }}>
+        <h2 className="lp-serif" style={{ fontSize: 21, marginBottom: 16 }}>Traffic</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 30 }} className="lp-mk-two">
+          <div>
+            <div className="lp-eyebrow" style={{ marginBottom: 12 }}>Most viewed</div>
+            {traffic && traffic.topProducts && traffic.topProducts.length > 0 ? traffic.topProducts.map((r) => (
+              <div key={r.product_id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0", borderBottom: "1px solid var(--line)" }}>
+                <span>{nameFor(r.product_id)}</span><span style={{ color: "var(--muted)" }}>{r.views}</span>
+              </div>
+            )) : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No product views yet.</p>}
+          </div>
+          <div>
+            <div className="lp-eyebrow" style={{ marginBottom: 12 }}>Where visitors come from</div>
+            {traffic && traffic.referrers && traffic.referrers.length > 0 ? traffic.referrers.map((r, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0", borderBottom: "1px solid var(--line)" }}>
+                <span style={{ wordBreak: "break-all" }}>{r.referrer}</span><span style={{ color: "var(--muted)" }}>{r.hits}</span>
+              </div>
+            )) : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No referrer data yet. Most traffic is showing as direct.</p>}
+          </div>
+        </div>
+      </section>
+
+      {/* Affiliates */}
+      <section style={{ marginBottom: 44 }}>
+        <h2 className="lp-serif" style={{ fontSize: 21, marginBottom: 6 }}>Affiliates</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 18, lineHeight: 1.6 }}>
+          Each affiliate shares their code for the discount and signs into their own portal with the PIN shown.
+        </p>
+
+        <div style={{ border: "1px solid var(--line)", overflowX: "auto", marginBottom: 20 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                {["Code", "Name", "Rate", "PIN", "Orders", "Sales", "Owed"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--muted)", fontWeight: 400, whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {affs.map((a) => (
+                <tr key={a.code} style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td style={{ padding: "10px 12px", color: "var(--gold-bright)", fontWeight: 600 }}>{a.code}</td>
+                  <td style={{ padding: "10px 12px" }}>{a.creator}</td>
+                  <td style={{ padding: "10px 12px" }}>{Math.round(a.pct * 100)}%</td>
+                  <td style={{ padding: "10px 12px", fontVariantNumeric: "tabular-nums", userSelect: "all" }}>{a.portalPin || "—"}</td>
+                  <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{a.orders}</td>
+                  <td style={{ padding: "10px 12px" }}>{money(a.revenueCents)}</td>
+                  <td style={{ padding: "10px 12px", color: "var(--gold-bright)" }}>{money(a.owedCents)}</td>
+                  <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                    <button onClick={() => resetAffPin(a.code)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontSize: 11, padding: "5px 9px", cursor: "pointer" }}>Set PIN</button>
+                  </td>
+                </tr>
+              ))}
+              {affs.length === 0 && <tr><td colSpan={8} style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 12.5 }}>No affiliates yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ border: "1px solid var(--line)", padding: 18 }}>
+          <div className="lp-eyebrow" style={{ marginBottom: 14 }}>Add an affiliate</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }} className="lp-mk-two">
+            <div>
+              <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Discount code</label>
+              <input value={nCode} onChange={(e) => setNCode(e.target.value.toUpperCase())} placeholder="e.g. JAKE" style={{ width: "100%", fontSize: 13.5, padding: "9px 12px" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Affiliate name</label>
+              <input value={nName} onChange={(e) => setNName(e.target.value)} placeholder="Full name" style={{ width: "100%", fontSize: 13.5, padding: "9px 12px" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Commission</label>
+              <select value={nPct} onChange={(e) => setNPct(e.target.value)} style={{ width: "100%", fontSize: 13.5, padding: "9px 12px" }}>
+                <option value="0.10">10%</option>
+                <option value="0.15">15%</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Portal PIN (4+ digits)</label>
+              <input value={nPin} onChange={(e) => setNPin(e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder="e.g. 5027" style={{ width: "100%", fontSize: 13.5, padding: "9px 12px" }} />
+            </div>
+          </div>
+          <button className="lp-btn lp-btn-solid" onClick={createAffiliate} style={{ fontSize: 12.5 }}>Create affiliate</button>
+        </div>
+      </section>
+
+      {/* Promo codes */}
+      <section style={{ marginBottom: 30 }}>
+        <h2 className="lp-serif" style={{ fontSize: 21, marginBottom: 6 }}>Promo codes</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 18 }}>Campaign codes give the customer a set % off at checkout.</p>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "stretch" }}>
+          <input value={pCode} onChange={(e) => setPCode(e.target.value.toUpperCase())} placeholder="NEW CODE e.g. LAUNCH" style={{ flex: "1 1 180px", fontSize: 13.5, padding: "10px 12px" }} />
+          <select value={pOff} onChange={(e) => setPOff(e.target.value)} style={{ fontSize: 13.5, padding: "10px 12px" }}>
+            {[5, 10, 15, 20, 25, 30].map((n) => <option key={n} value={String(n)}>{n}% off</option>)}
+          </select>
+          <button className="lp-btn lp-btn-solid" onClick={createPromo} style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>Create code</button>
+        </div>
+
+        {promos.length > 0 ? (
+          <div style={{ border: "1px solid var(--line)" }}>
+            {promos.map((pr) => (
+              <div key={pr.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderBottom: "1px solid var(--line)", gap: 12 }}>
+                <div>
+                  <span style={{ color: "var(--gold-bright)", fontWeight: 600, fontSize: 13.5 }}>{pr.code}</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10 }}>
+                    {pr.kind === "pct" ? `${pr.value}% off` : pr.kind} · {pr.used_count || 0} used{pr.max_uses ? ` / ${pr.max_uses}` : ""}
+                  </span>
+                </div>
+                <button onClick={() => togglePromo(pr.code)} style={{ background: "none", border: "1px solid var(--line)", color: pr.active ? "var(--gold-bright)" : "var(--muted)", fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>
+                  {pr.active ? "Active" : "Paused"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No promo codes yet.</p>}
+      </section>
+
+      {msg && <p style={{ fontSize: 12.5, color: "var(--gold-bright)", marginTop: 8 }}>{msg}</p>}
     </div>
   );
 }
@@ -6769,9 +7045,10 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "ambassador" && <AmbassadorPage setPage={setPage} />}
       {page === "portal" && <AmbassadorPortal setPage={setPage} />}
       {page === "owner" && <OwnerPortal setPage={setPage} />}
+      {page === "marketing" && <MarketingPortal setPage={setPage} />}
       {page === "batch" && <BatchLookup setPage={setPage} openProduct={openProduct} />}
       {page === "compare" && <ComparePage setPage={setPage} openProduct={openProduct} />}
-      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","batch","compare","account","status","guide","review" ].includes(page) && (
+      {![ "home","shop","product","cart","checkout","success","orders","about","calculator","coa","terms","privacy","shipping","faq","contact","ambassador","portal","owner","marketing","batch","compare","account","status","guide","review" ].includes(page) && (
         <div className="lp-fade" style={{ maxWidth: 600, margin: "0 auto", padding: "100px 28px", textAlign: "center" }}>
           <div className="lp-eyebrow" style={{ marginBottom: 12 }}>404</div>
           <h2 className="lp-serif" style={{ fontSize: 30, marginBottom: 14 }}>Page not found</h2>
