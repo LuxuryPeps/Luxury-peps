@@ -4552,7 +4552,7 @@ function MarketingPortal({ setPage }) {
         </div>
         <button className="lp-btn" onClick={() => { setAuthed(false); setPin(""); }} style={{ fontSize: 12 }}>Sign out</button>
       </div>
-      <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 26 }}>Last 14 days</p>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 26 }}>Last 30 days</p>
 
       {/* KPIs */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
@@ -4968,6 +4968,8 @@ function OwnerPortal({ setPage }) {
   const savePromo = async () => {
     setPromoMsg("");
     const value = promoForm.kind === "amount" ? Math.round(Number(promoForm.value) * 100) : Number(promoForm.value);
+    // Percentage codes are capped at 10% (server enforces this too).
+    if (promoForm.kind === "pct" && (value < 1 || value > 10)) { setPromoMsg("Percent must be between 1 and 10."); return; }
     try {
       const r = await ownerFetch("/api/owner/promos", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -5307,7 +5309,7 @@ function OwnerPortal({ setPage }) {
           <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
               <TrendingUp size={14} color="var(--gold-bright)" />
-              <div className="lp-eyebrow">Traffic · last 14 days</div>
+              <div className="lp-eyebrow">Traffic · last 30 days</div>
             </div>
             <div style={{ display: "flex", gap: 18, fontSize: 11.5, color: "var(--muted)", marginBottom: 14, flexWrap: "wrap" }}>
               <span>Visits <b style={{ color: "var(--cream)" }}>{stats.views}</b></span>
@@ -5487,7 +5489,7 @@ function OwnerPortal({ setPage }) {
               <option value="freeship">Free shipping</option>
             </select>
             {promoForm.kind !== "freeship" && (
-              <input type="number" placeholder={promoForm.kind === "pct" ? "10 (%)" : "5.00 ($)"} value={promoForm.value} onChange={(e) => setPromoForm((f) => ({ ...f, value: e.target.value }))} style={{ fontSize: 12.5 }} />
+              <input type="number" placeholder={promoForm.kind === "pct" ? "1–10 (%)" : "5.00 ($)"} max={promoForm.kind === "pct" ? 10 : undefined} value={promoForm.value} onChange={(e) => setPromoForm((f) => ({ ...f, value: e.target.value }))} style={{ fontSize: 12.5 }} />
             )}
             <input type="date" title="Expires (optional)" value={promoForm.expiresAt} onChange={(e) => setPromoForm((f) => ({ ...f, expiresAt: e.target.value }))} style={{ fontSize: 12.5 }} />
             <input type="number" placeholder="Max uses" value={promoForm.maxUses} onChange={(e) => setPromoForm((f) => ({ ...f, maxUses: e.target.value }))} style={{ fontSize: 12.5 }} />
