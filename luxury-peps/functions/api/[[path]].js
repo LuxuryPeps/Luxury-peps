@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-19.1";
+const BACKEND_VERSION = "2026-07-20.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -207,18 +207,20 @@ function makeDB(env) {
 }
 
 // Build a 14-day series (newest-last) from [{day:'YYYY-MM-DD', cents}] rows.
-function series14(rows, field) {
+function seriesN(rows, field, n) {
   const map = {};
   for (const r of rows) map[r.day] = r.cents || 0;
   const out = [];
   const today = new Date();
-  for (let i = 29; i >= 0; i--) {
+  for (let i = n - 1; i >= 0; i--) {
     const d = new Date(today.getTime() - i * DAY);
     const day = d.toISOString().slice(0, 10);
     out.push({ day, [field]: map[day] || 0 });
   }
   return out;
 }
+// 30-day wrapper kept for the owner dashboard call sites.
+function series14(rows, field) { return seriesN(rows, field, 30); }
 
 // Self-healing schema: adds anything new without a manual D1 migration step.
 // Every statement is idempotent and failures are swallowed (column exists).
@@ -696,15 +698,19 @@ export async function onRequest(context) {
     if (path === "/api/marketing/traffic" && method === "GET") {
       if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
       try { await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))"); } catch (_) {}
-      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-29 days') group by day");
-      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-29 days')");
-      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-29 days') group by product_id order by views desc limit 8");
-      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-29 days') group by referrer order by hits desc limit 10");
+      // Window is 7, 30, or 90 days — anything else falls back to 30.
+      const days = [7, 30, 90].includes(Number(qs.get("days"))) ? Number(qs.get("days")) : 30;
+      const since = "datetime('now','-" + (days - 1) + " days')";
+      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= " + since + " group by day");
+      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= " + since);
+      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= " + since + " group by product_id order by views desc limit 8");
+      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= " + since + " group by referrer order by hits desc limit 10");
       return J({
+        days,
         views: (totals && totals.views) || 0,
         productViews: (totals && totals.productViews) || 0,
         checkouts: (totals && totals.checkouts) || 0,
-        series: series14(dayRows, "views"),
+        series: seriesN(dayRows, "views", days),
         topProducts, referrers,
       });
     }
@@ -713,14 +719,14 @@ export async function onRequest(context) {
     // each code's sales and what's owed. No payout actions live here.
     if (path === "/api/marketing/affiliates" && method === "GET") {
       if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
-      const rows = await db.all("select code, creator, pct, portal_pin, builtin from ambassadors where active=1 order by builtin desc, code");
+      const rows = await db.all("select code, creator, pct, portal_pin, builtin, active from ambassadors order by active desc, builtin desc, code");
       const out = [];
       for (const a of rows) {
         const sales = await db.first("select coalesce(sum(total_cents),0) as revenue, count(*) as orders from orders where code=? and status in ('paid','shipped') and coalesce(archived,0)=0", a.code);
         const owedRow = await db.first("select coalesce(sum(case when paid_at is not null then commission_cents else 0 end),0) as owed from orders where code=? and coalesce(archived,0)=0", a.code);
         const paidRow = await db.first("select coalesce(sum(amount_cents),0) as paid from payouts where code=?", a.code);
         out.push({
-          code: a.code, creator: a.creator, pct: a.pct, portalPin: a.portal_pin, builtin: !!a.builtin,
+          code: a.code, creator: a.creator, pct: a.pct, portalPin: a.portal_pin, builtin: !!a.builtin, active: !!a.active,
           orders: (sales && sales.orders) || 0,
           revenueCents: (sales && sales.revenue) || 0,
           owedCents: Math.max(0, ((owedRow && owedRow.owed) || 0) - ((paidRow && paidRow.paid) || 0)),
@@ -757,7 +763,19 @@ export async function onRequest(context) {
       return J({ ok: true });
     }
 
-    // Promo codes — list, and create constrained to 10% off only.
+    // Pause or reactivate an affiliate. Flips the active flag; the row and all its
+    // order history are kept, so a paused code can be switched back on unchanged.
+    if (path === "/api/marketing/affiliate-toggle" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(body.code);
+      const row = await db.first("select active from ambassadors where code=?", code);
+      if (!row) return J({ error: "No such affiliate." }, 404);
+      await db.run("update ambassadors set active = case when active=1 then 0 else 1 end where code=?", code);
+      const now = await db.first("select active from ambassadors where code=?", code);
+      return J({ ok: true, active: !!(now && now.active) });
+    }
+
+    // Promo codes — list, and create constrained to 5-30% in steps of 5.
     if (path === "/api/marketing/promos" && method === "GET") {
       if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
       const rows = await db.all("select code, kind, value, active, expires_at, max_uses, used_count from promos order by rowid desc");
