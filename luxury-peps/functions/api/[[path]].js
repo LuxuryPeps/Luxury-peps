@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-18.2";
+const BACKEND_VERSION = "2026-07-19.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -212,7 +212,7 @@ function series14(rows, field) {
   for (const r of rows) map[r.day] = r.cents || 0;
   const out = [];
   const today = new Date();
-  for (let i = 13; i >= 0; i--) {
+  for (let i = 29; i >= 0; i--) {
     const d = new Date(today.getTime() - i * DAY);
     const day = d.toISOString().slice(0, 10);
     out.push({ day, [field]: map[day] || 0 });
@@ -546,7 +546,9 @@ export async function onRequest(context) {
       if (!/^[A-Z0-9]{3,20}$/.test(code)) return J({ error: "Code must be 3–20 letters or numbers." }, 400);
       const kind = ["pct", "amount", "freeship"].includes(body.kind) ? body.kind : "pct";
       let value = Math.max(0, Math.floor(Number(body.value) || 0));
-      if (kind === "pct" && (value < 1 || value > 100)) return J({ error: "Percent must be between 1 and 100." }, 400);
+      // Owner percentage promos are capped at 10%. (Fixed-amount and free-shipping
+      // codes are unaffected — the cap is on the percentage only.)
+      if (kind === "pct" && (value < 1 || value > 10)) return J({ error: "Percent must be between 1 and 10." }, 400);
       if (kind === "amount" && value < 1) return J({ error: "Enter an amount in cents." }, 400);
       if (kind === "freeship") value = 0;
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an ambassador code." }, 409);
@@ -601,11 +603,11 @@ export async function onRequest(context) {
     if (path === "/api/owner/analytics" && method === "GET") {
       if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
       try { await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))"); } catch (_) {}
-      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-13 days') group by day");
-      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-13 days')");
-      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-13 days') group by product_id order by views desc limit 8");
-      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-13 days') group by referrer order by hits desc limit 6");
-      const orderRow = await db.first("select count(*) as n from orders where created_at >= datetime('now','-13 days') and coalesce(archived,0)=0");
+      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-29 days') group by day");
+      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-29 days')");
+      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-29 days') group by product_id order by views desc limit 8");
+      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-29 days') group by referrer order by hits desc limit 6");
+      const orderRow = await db.first("select count(*) as n from orders where created_at >= datetime('now','-29 days') and coalesce(archived,0)=0");
       return J({
         views: (totals && totals.views) || 0,
         productViews: (totals && totals.productViews) || 0,
@@ -694,10 +696,10 @@ export async function onRequest(context) {
     if (path === "/api/marketing/traffic" && method === "GET") {
       if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
       try { await db.run("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))"); } catch (_) {}
-      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-13 days') group by day");
-      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-13 days')");
-      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-13 days') group by product_id order by views desc limit 8");
-      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-13 days') group by referrer order by hits desc limit 10");
+      const dayRows = await db.all("select date(created_at) as day, count(*) as cents from events where event='page_view' and created_at >= datetime('now','-29 days') group by day");
+      const totals = await db.first("select sum(case when event='page_view' then 1 else 0 end) as views, sum(case when event='product_view' then 1 else 0 end) as productViews, sum(case when event='checkout_start' then 1 else 0 end) as checkouts from events where created_at >= datetime('now','-29 days')");
+      const topProducts = await db.all("select product_id, count(*) as views from events where event='product_view' and product_id is not null and created_at >= datetime('now','-29 days') group by product_id order by views desc limit 8");
+      const referrers = await db.all("select referrer, count(*) as hits from events where event='page_view' and referrer<>'' and created_at >= datetime('now','-29 days') group by referrer order by hits desc limit 10");
       return J({
         views: (totals && totals.views) || 0,
         productViews: (totals && totals.productViews) || 0,
