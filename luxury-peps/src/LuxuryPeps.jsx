@@ -2948,7 +2948,7 @@ function Checkout({ cart, setPage, addToCart }) {
               style={{ width: "auto", marginTop: 2, accentColor: "#C9A05C" }}
             />
             <span>
-              I certify that I am at least 18 years old, am purchasing these compounds solely for laboratory
+              I certify that I am at least 21 years old, am purchasing these compounds solely for laboratory
               research purposes, and will not use, sell, or represent them for human or animal consumption,
               diagnostic use, or therapeutic use of any kind.
             </span>
@@ -3757,7 +3757,7 @@ function AuthGate({ onAuthenticated }) {
         </button>
 
         <p style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.7, marginTop: 24, textAlign: "center" }}>
-          By registering you confirm you are at least 18 years old and intend to purchase research compounds
+          By registering you confirm you are at least 21 years old and intend to purchase research compounds
           for laboratory use only.
         </p>
       </div>
@@ -3776,7 +3776,7 @@ function AgeGate({ onConfirm, declined, onDecline }) {
           <>
             <h2 className="lp-serif" style={{ fontSize: 24, marginBottom: 14 }}>Access Restricted</h2>
             <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>
-              You must be at least 18 years old and a qualified researcher to access this site. You may
+              You must be at least 21 years old and a qualified researcher to access this site. You may
               close this window.
             </p>
             <button className="lp-btn" onClick={() => onDecline && onDecline()} style={{ opacity: 0.6 }}>Go Back</button>
@@ -3788,7 +3788,7 @@ function AgeGate({ onConfirm, declined, onDecline }) {
               All products are sold strictly for laboratory and research use only — <strong style={{ color: "var(--cream)" }}>not for human or animal consumption</strong>.
             </p>
             <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.8, marginBottom: 28 }}>
-              By entering, you confirm that you are at least <strong style={{ color: "var(--cream)" }}>18 years of age</strong>, that you are a qualified buyer, and that you agree to our Terms of Service.
+              By entering, you confirm that you are at least <strong style={{ color: "var(--cream)" }}>21 years of age</strong>, that you are a qualified buyer, and that you agree to our Terms of Service.
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
               <button className="lp-btn lp-btn-solid" onClick={onConfirm}>I am 18 or older — Enter</button>
@@ -3843,7 +3843,7 @@ function TermsPage({ setPage }) {
         and disposal of all products in compliance with applicable laws.</p>
       </PolicySection>
       <PolicySection heading="2. Eligibility">
-        <p>You must be at least 18 years old (or the age of majority in your jurisdiction) and a qualified
+        <p>You must be at least 21 years old (or the age of majority in your jurisdiction, whichever is greater) and a qualified
         purchaser to use this site. By purchasing, you represent that you have the training and facilities
         to handle research compounds safely and lawfully.</p>
       </PolicySection>
