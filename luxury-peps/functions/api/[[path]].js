@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-20.1";
+const BACKEND_VERSION = "2026-07-21.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -550,7 +550,7 @@ export async function onRequest(context) {
       let value = Math.max(0, Math.floor(Number(body.value) || 0));
       // Owner percentage promos are capped at 10%. (Fixed-amount and free-shipping
       // codes are unaffected — the cap is on the percentage only.)
-      if (kind === "pct" && (value < 1 || value > 10)) return J({ error: "Percent must be between 1 and 10." }, 400);
+      if (kind === "pct" && (value < 1 || value > 50)) return J({ error: "Percent must be between 1 and 50." }, 400);
       if (kind === "amount" && value < 1) return J({ error: "Enter an amount in cents." }, 400);
       if (kind === "freeship") value = 0;
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an ambassador code." }, 409);
