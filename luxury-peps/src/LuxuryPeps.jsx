@@ -5081,7 +5081,7 @@ function OwnerPortal({ setPage }) {
     setPromoMsg("");
     const value = promoForm.kind === "amount" ? Math.round(Number(promoForm.value) * 100) : Number(promoForm.value);
     // Percentage codes are capped at 10% (server enforces this too).
-    if (promoForm.kind === "pct" && (value < 1 || value > 10)) { setPromoMsg("Percent must be between 1 and 10."); return; }
+    if (promoForm.kind === "pct" && (value < 1 || value > 50)) { setPromoMsg("Percent must be between 1 and 50."); return; }
     try {
       const r = await ownerFetch("/api/owner/promos", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -5601,7 +5601,7 @@ function OwnerPortal({ setPage }) {
               <option value="freeship">Free shipping</option>
             </select>
             {promoForm.kind !== "freeship" && (
-              <input type="number" placeholder={promoForm.kind === "pct" ? "1–10 (%)" : "5.00 ($)"} max={promoForm.kind === "pct" ? 10 : undefined} value={promoForm.value} onChange={(e) => setPromoForm((f) => ({ ...f, value: e.target.value }))} style={{ fontSize: 12.5 }} />
+              <input type="number" placeholder={promoForm.kind === "pct" ? "1–50 (%)" : "5.00 ($)"} max={promoForm.kind === "pct" ? 50 : undefined} value={promoForm.value} onChange={(e) => setPromoForm((f) => ({ ...f, value: e.target.value }))} style={{ fontSize: 12.5 }} />
             )}
             <input type="date" title="Expires (optional)" value={promoForm.expiresAt} onChange={(e) => setPromoForm((f) => ({ ...f, expiresAt: e.target.value }))} style={{ fontSize: 12.5 }} />
             <input type="number" placeholder="Max uses" value={promoForm.maxUses} onChange={(e) => setPromoForm((f) => ({ ...f, maxUses: e.target.value }))} style={{ fontSize: 12.5 }} />
