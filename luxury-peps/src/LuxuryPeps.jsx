@@ -314,7 +314,7 @@ const BASE_PRODUCTS = [
   { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 139.99, batchPrefix: "TRI-7010" },
   { id: "p08", no: "08", name: "GHK-Cu", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 64.99, batchPrefix: "GHK-1075" },
   { id: "p07", no: "09", name: "Melanotan II", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 44.99, batchPrefix: "MT2-8814" },
-  { id: "p28", no: "10", name: "Glutathione", form: "Lyophilized Powder", purity: "99.3%", baseMg: 1500, basePrice: 71.99, batchPrefix: "GLU-6004", soldOut: true },
+  { id: "p28", no: "10", name: "Glutathione", form: "Lyophilized Powder", purity: "99.3%", baseMg: 1500, basePrice: 71.99, batchPrefix: "GLU-6004" },
   { id: "p05", no: "11", name: "Ipamorelin", form: "Lyophilized Powder", purity: "99.4%", baseMg: 5, basePrice: 39.99, batchPrefix: "IPM-3387", sizes: [{ mg: 5, price: 39.99 }, { mg: 10, price: 59.99 }] },
   { id: "p06", no: "12", name: "CJC-1295 (No DAC)", form: "Lyophilized Powder", purity: "98.9%", baseMg: 10, basePrice: 65.99, batchPrefix: "CJC-2049" },
   { id: "p33", no: "13", name: "CJC-1295 + Ipamorelin", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 81.99, batchPrefix: "CJI-1205" },
@@ -328,9 +328,9 @@ const BASE_PRODUCTS = [
   { id: "p25", no: "21", name: "VIP", form: "Lyophilized Powder", purity: "98.8%", baseMg: 10, basePrice: 69.99, batchPrefix: "VIP-3360" },
   { id: "p11", no: "22", name: "Selank", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 38.99, batchPrefix: "SEL-7732" },
   { id: "p12", no: "23", name: "Semax", form: "Lyophilized Powder", purity: "99.2%", baseMg: 5, basePrice: 39.99, batchPrefix: "SMX-2298" },
-  { id: "p23", no: "24", name: "Oxytocin Acetate", form: "Lyophilized Powder", purity: "98.9%", baseMg: 2, basePrice: 53.99, batchPrefix: "OXY-2208", soldOut: true },
+  { id: "p23", no: "24", name: "Oxytocin Acetate", form: "Lyophilized Powder", purity: "98.9%", baseMg: 2, basePrice: 53.99, batchPrefix: "OXY-2208" },
   { id: "p26", no: "25", name: "5-Amino-1MQ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 69.99, batchPrefix: "5AM-1099" },
-  { id: "p30", no: "26", name: "HCG", form: "Lyophilized Powder", purity: "98.5%", baseMg: 10000, basePrice: 94.99, batchPrefix: "HCG-1000", unit: "IU", soldOut: true },
+  { id: "p30", no: "26", name: "HCG", form: "Lyophilized Powder", purity: "98.5%", baseMg: 10000, basePrice: 94.99, batchPrefix: "HCG-1000", unit: "IU" },
   { id: "p27", no: "27", name: "Bacteriostatic Water", form: "0.9% Benzyl Alcohol Solution", purity: "USP-Grade", baseMg: 10, basePrice: 14.99, batchPrefix: "BAC-3001", unit: "mL", container: "vial" },
 ];
 
