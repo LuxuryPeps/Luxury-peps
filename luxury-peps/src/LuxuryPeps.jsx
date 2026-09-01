@@ -311,7 +311,8 @@ const BASE_PRODUCTS = [
   { id: "p01", no: "04", name: "BPC-157", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 44.99, batchPrefix: "BPC-2206" },
   { id: "p02", no: "05", name: "TB-500", form: "Lyophilized Powder", purity: "98.7%", baseMg: 10, basePrice: 54.99, batchPrefix: "TB4-1190" },
   { id: "p29", no: "06", name: "BPC-157 + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 119.99, batchPrefix: "BTB-2210" },
-  { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 139.99, batchPrefix: "TRI-7010" },
+  { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500 (GLOW)", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 109.99, batchPrefix: "TRI-7010" },
+  { id: "p35", no: "08", name: "BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 75, basePrice: 139.99, batchPrefix: "KLW-3512" },
   { id: "p08", no: "08", name: "GHK-Cu", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 64.99, batchPrefix: "GHK-1075" },
   { id: "p07", no: "09", name: "Melanotan II", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 44.99, batchPrefix: "MT2-8814" },
   { id: "p28", no: "10", name: "Glutathione", form: "Lyophilized Powder", purity: "99.3%", baseMg: 1500, basePrice: 71.99, batchPrefix: "GLU-6004" },
@@ -555,6 +556,7 @@ const CHEM = {
   p25: { cas: "37221-79-7",   formula: "C147H237N43O43S",  mw: "3326.8" },
   p28: { cas: "70-18-8",      formula: "C10H17N3O6S",      mw: "307.3" },
   p31: { cas: "218949-48-5",  formula: "C221H366N72O67S",  mw: "5135.9" },
+  p20: { cas: "67727-97-3",   formula: "C16H30N4O4",       mw: "342.4" },   // KPV (Lys-Pro-Val), PubChem-verified
 };
 
 // Blends carry no single CAS — their specification is their components.
@@ -562,6 +564,7 @@ const BLEND_PARTS = {
   p29: ["p01", "p02"],
   p33: ["p06", "p05"],
   p34: ["p08", "p01", "p02"],
+  p35: ["p08", "p01", "p02", "p20"],
 };
 
 // Renders a subscripted molecular formula: C62H98N16O22 -> C₆₂H₉₈…
@@ -6320,7 +6323,8 @@ function SpecTable({ p }) {
             </thead>
             <tbody>
               {parts.map((id) => {
-                const cp = PRODUCTS.find((x) => x.id === id);
+                const NAMEMAP = { p20: "KPV" };
+                const cp = PRODUCTS.find((x) => x.id === id) || (NAMEMAP[id] ? { name: NAMEMAP[id] } : null);
                 const cc = CHEM[id];
                 return (
                   <tr key={id} style={{ borderBottom: "1px solid var(--line)" }}>
