@@ -3233,6 +3233,26 @@ function Success({ setPage, clearCart }) {
   }, []);
   useEffect(() => { if (order) clearCart(); }, [order]);
 
+  // Fire the Google Ads purchase conversion exactly once, when a real order
+  // loads on the success screen — with the actual order total and number, not a
+  // hardcoded value. Guarded so a re-render can't count the same sale twice.
+  const conversionSent = useRef(false);
+  useEffect(() => {
+    if (!order || conversionSent.current) return;
+    conversionSent.current = true;
+    try {
+      const amount = Number(order.total);
+      if (typeof window !== "undefined" && typeof window.gtag === "function") {
+        window.gtag("event", "conversion", {
+          send_to: "AW-18426668319/CWqVCNnGke0cEJ_KwtJE",
+          value: isFinite(amount) && amount > 0 ? amount : 1.0,
+          currency: "USD",
+          transaction_id: order.reference || "",
+        });
+      }
+    } catch (_) { /* analytics must never break the confirmation page */ }
+  }, [order]);
+
   const cfg = SITE_CONFIG.manualPayments || {};
   const addrs = order && order.method === "crypto" ? Object.entries(cfg.cryptoAddresses || {}).filter(([, v]) => v) : [];
   const methodName = order ? (order.method === "crypto" ? "Crypto" : order.method === "cashapp" ? "Cash App" : order.method === "zelle" ? "Zelle" : "Bank transfer") : "";
