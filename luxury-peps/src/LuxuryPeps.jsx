@@ -464,6 +464,7 @@ const usd2 = (dollars) => Number(dollars).toFixed(2);      // 45      -> "45.00"
 const cents2 = (cents) => (Number(cents) / 100).toFixed(2); // 8550   -> "85.50"
 
 const FREE_SHIP_THRESHOLD = 150;
+const FREE_WATER_THRESHOLD = 150; // free bacteriostatic water at/above this subtotal (matches backend)
 const FLAT_SHIP = 12;
 
 // Pre-built bundle / stack kits. These are a convenience only: adding a kit
@@ -2480,10 +2481,20 @@ function Cart({ cart, setPage, updateQty, removeItem, addToCart }) {
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14 }}>
             <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${cents2(subtotalCents)}</span>
           </div>
+          {subtotal >= FREE_WATER_THRESHOLD && (
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14, color: "var(--gold-bright)" }}>
+              <span>+ Bacteriostatic Water (free gift)</span><span>$0.00</span>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, fontSize: 14 }}>
             <span style={{ color: "var(--muted)" }}>Shipping</span>
             <span>{remaining > 0 ? `$${usd2(FLAT_SHIP)}` : "Free"}</span>
           </div>
+          {subtotal > 0 && subtotal < FREE_WATER_THRESHOLD && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, textAlign: "center" }}>
+              Add ${usd2(FREE_WATER_THRESHOLD - subtotal)} more for a free vial of bacteriostatic water.
+            </div>
+          )}
           <button className="lp-btn lp-btn-solid" style={{ width: "100%" }} onClick={() => setPage("checkout")}>
             Proceed to Checkout
           </button>
@@ -3026,6 +3037,11 @@ function Checkout({ cart, setPage, addToCart }) {
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8 }}>
               <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${usd2(subtotal)}</span>
             </div>
+            {subtotal >= FREE_WATER_THRESHOLD && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8, color: "var(--gold-bright)" }}>
+                <span>+ Bacteriostatic Water (free gift)</span><span>$0.00</span>
+              </div>
+            )}
             {promoDiscount > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, color: "var(--gold-bright)" }}>
                 <span>Promo {appliedPromo ? appliedPromo.code : ""}</span><span>−${usd(promoDiscountCents)}</span>
