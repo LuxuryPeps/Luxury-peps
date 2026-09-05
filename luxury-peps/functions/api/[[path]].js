@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-22.1";
+const BACKEND_VERSION = "2026-07-23.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -252,6 +252,8 @@ async function ensureSchema(db) {
   await t("create table if not exists email_log (id integer primary key autoincrement, recipient text, subject text, status integer, error text, created_at text not null default (datetime('now')))");
   await t("create table if not exists webhook_log (id integer primary key autoincrement, event_type text, signature_ok integer, matched_order text, note text, created_at text not null default (datetime('now')))");
   await t("create table if not exists rate_counters (k text primary key, n integer not null default 0, bucket integer not null)");
+  // Simple key/value store for owner-editable site settings (e.g. the top banner).
+  await t("create table if not exists app_settings (k text primary key, v text, updated_at text not null default (datetime('now')))");
   // Marketing list. consent_text stores the EXACT wording the person agreed to:
   // under the TCPA it's not enough to have a number, you must be able to show
   // what they consented to and when.
@@ -430,6 +432,22 @@ export async function onRequest(context) {
         rows.map((r) => [q(r.phone), q(r.email), q(r.consent_text), q(r.created_at)].join(","))
       ).join("\n");
       return new Response(csv, { status: 200, headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=luxury-peps-subscribers.csv", "Access-Control-Allow-Origin": "*" } });
+    }
+
+    // ---- PUBLIC: site banner (owner-editable announcement) -----------------
+    if (path === "/api/banner" && method === "GET") {
+      const row = await db.first("select v from app_settings where k='banner'");
+      let banner = { enabled: false, text: "" };
+      if (row && row.v) { try { banner = JSON.parse(row.v); } catch (_) {} }
+      return J({ banner });
+    }
+
+    // ---- OWNER: set the banner --------------------------------------------
+    if (path === "/api/owner/banner" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const banner = { enabled: !!body.enabled, text: String(body.text || "").slice(0, 200) };
+      await db.run("insert into app_settings (k, v, updated_at) values ('banner', ?, datetime('now')) on conflict(k) do update set v=excluded.v, updated_at=datetime('now')", JSON.stringify(banner));
+      return J({ ok: true, banner });
     }
 
     // ---- PUBLIC: live stock for tracked products ---------------------------
