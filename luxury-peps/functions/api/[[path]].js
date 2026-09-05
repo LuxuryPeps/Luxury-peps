@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-21.1";
+const BACKEND_VERSION = "2026-07-22.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -28,6 +28,9 @@ const OWNER_EMAIL_FALLBACK = "hello@luxurypeps.com";
 // Flat discount a customer receives for using ANY affiliate code, independent of
 // what that affiliate earns in commission.
 const AFFILIATE_CUSTOMER_DISCOUNT = 0.10;
+// Free bacteriostatic water on qualifying orders (threshold on pre-discount subtotal).
+const FREE_WATER_THRESHOLD_CENTS = 15000;   // $150.00
+const FREE_WATER_VARIANT = "p27-A";
 // Analytics: only these events are accepted, and only this many per IP per hour.
 // A real visitor browsing hard might hit ~60; 200 leaves plenty of headroom.
 const TRACK_EVENTS = new Set(["page_view", "product_view", "checkout_start"]);
@@ -54,10 +57,21 @@ function priceOrder(items, ambassadorPct, promo) {
   for (const it of items || []) {
     const v = VARIANTS[it.variantId];
     if (!v) continue;
+    // A free item can never be paid for — ignore any client-sent p27 free line;
+    // the server decides whether the free vial is earned, below.
+    if (it.variantId === FREE_WATER_VARIANT && Number(it.qty) === 0) continue;
     const qty = Math.max(1, Math.floor(Number(it.qty) || 1));
     const line = Math.round(v.cents * qty * (1 - qtyDiscountPct(qty)));
     subtotal += line;
     lines.push({ variantId: it.variantId, productId: String(it.variantId).split("-")[0], name: v.name, qty, unitCents: v.cents, lineCents: line });
+  }
+
+  // Gift: one free bacteriostatic water on orders whose (pre-discount) subtotal
+  // reaches the free-water threshold. It's a $0 line, so it adds nothing to the
+  // charge and can't be abused — the server sets it, not the browser.
+  const earnsFreeWater = subtotal >= FREE_WATER_THRESHOLD_CENTS;
+  if (earnsFreeWater && VARIANTS[FREE_WATER_VARIANT]) {
+    lines.push({ variantId: FREE_WATER_VARIANT, productId: "p27", name: "Bacteriostatic Water (Free gift)", qty: 1, unitCents: 0, lineCents: 0, free: true });
   }
   // Customer discount and affiliate commission are now SEPARATE:
   //  - the shopper always gets AFFILIATE_CUSTOMER_DISCOUNT (10%) for using a code
