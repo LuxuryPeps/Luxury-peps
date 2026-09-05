@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { ShoppingBag, X, Menu, ChevronRight, ChevronLeft, Check, Minus, Plus, Beaker, ShieldCheck, Truck, Mail, FileText, AlertCircle, Loader2, Lock, LogOut, Eye, EyeOff, Phone, Sparkles, Star, Search, MessageCircle, Send, Copy, Share2, TrendingUp, Wallet, DollarSign, LayoutDashboard, Ruler } from "lucide-react";
+import { Award, ShoppingBag, X, Menu, ChevronRight, ChevronLeft, Check, Minus, Plus, Beaker, ShieldCheck, Truck, Mail, FileText, AlertCircle, Loader2, Lock, LogOut, Eye, EyeOff, Phone, Sparkles, Star, Search, MessageCircle, Send, Copy, Share2, TrendingUp, Wallet, DollarSign, LayoutDashboard, Ruler } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────
 // SITE CONFIG — edit these once and they propagate across the whole site
@@ -147,7 +147,8 @@ const FONTS = (
       .lp-hero { grid-template-columns: 1fr; gap: 42px; text-align: center; }
       .lp-hero-cta, .lp-hero-stats { justify-content: center; }
     }
-    .lp-trust-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+    .lp-trust-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; }
+    @media (max-width: 980px) and (min-width: 721px) { .lp-trust-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 720px) { .lp-trust-grid { grid-template-columns: 1fr; gap: 26px; text-align: center; } }
     @media (max-width: 640px) { .lp-mk-two { grid-template-columns: 1fr !important; } }
     .lp-eyebrow {
@@ -1355,6 +1356,7 @@ function Home({ setPage, addToCart, openProduct }) {
             { icon: <Beaker size={20} />, t: "Verified Purity", d: "Every batch independently tested and documented before listing." },
             { icon: <ShieldCheck size={20} />, t: "Research Use Only", d: "Compounds are supplied exclusively for qualified laboratory research." },
             { icon: <Truck size={20} />, t: "Discreet Fulfilment", d: "Cold-chain handling and unmarked packaging on every order." },
+            { icon: <Award size={20} />, t: "USA Made & Tested", d: "Compounded and third-party tested in the United States." },
           ].map((f, i) => (
             <div key={i}>
               <div style={{ color: "var(--gold)", marginBottom: 14 }}>{f.icon}</div>
@@ -3472,6 +3474,7 @@ const STANDARD_SECTIONS = [
       "Purity is measured by third-party High-Performance Liquid Chromatography before a compound is listed. HPLC separates a sample into its components and reports each as a proportion of total peak area, which is what a purity percentage actually means.",
       "Purity alone doesn't establish identity. Mass spectrometry is used alongside it to confirm the observed mass matches the compound's expected molecular weight — that the material is the molecule named, not merely a pure something. A sample can be 99% pure and still be the wrong compound.",
       "Our listing threshold is 98%. Every compound in the catalogue is at or above it, and each product page states its own figure rather than a blanket claim.",
+      "Compounds are compounded and third-party tested in the United States.",
     ],
   },
   {
