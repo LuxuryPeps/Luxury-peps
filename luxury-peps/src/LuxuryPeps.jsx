@@ -1353,7 +1353,7 @@ function Home({ setPage, addToCart, openProduct }) {
       <section style={{ maxWidth: 1240, margin: "0 auto", padding: "40px 28px 100px" }}>
         <div className="lp-trust-grid">
           {[
-            { icon: <Beaker size={20} />, t: "Verified Purity", d: "Every batch independently tested and documented before listing." },
+            { icon: <Beaker size={20} />, t: "7\u00D7 HPLC-Verified", d: "Every compound verified across multiple independent HPLC passes before listing." },
             { icon: <ShieldCheck size={20} />, t: "Research Use Only", d: "Compounds are supplied exclusively for qualified laboratory research." },
             { icon: <Truck size={20} />, t: "Discreet Fulfilment", d: "Cold-chain handling and unmarked packaging on every order." },
             { icon: <Award size={20} />, t: "USA Made & Tested", d: "Compounded and third-party tested in the United States." },
@@ -6355,6 +6355,8 @@ function SpecTable({ p }) {
     rows.push(["Molecular Weight", `${chem.mw} g/mol`]);
   }
   rows.push(["Purity", `\u2265 ${p.purity} (HPLC)`]);
+  // GLP-3 RT is verified across 10 independent HPLC passes; every other compound across 7.
+  rows.push(["Testing", `${p.id === "p21" ? "10" : "7"}\u00D7 HPLC-verified`]);
   rows.push(["Physical Form", p.form]);
   rows.push(["Batch Reference", `${p.batchPrefix} series`]);
   rows.push(["Storage", isSolution
