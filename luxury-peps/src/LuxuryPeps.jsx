@@ -4890,6 +4890,19 @@ function OwnerPortal({ setPage }) {
   const [testEmailResult, setTestEmailResult] = useState("");
   const [clearMsg, setClearMsg] = useState("");
   const [subs, setSubs] = useState(null);
+  const [bannerText, setBannerText] = useState("");
+  const [bannerOn, setBannerOn] = useState(false);
+  const [bannerMsg, setBannerMsg] = useState("");
+  const loadBanner = async () => {
+    try { const r = await fetch(API_BASE + "/api/banner"); if (r.ok) { const d = await r.json(); setBannerText((d.banner && d.banner.text) || ""); setBannerOn(!!(d.banner && d.banner.enabled)); } } catch (_) {}
+  };
+  const saveBanner = async () => {
+    setBannerMsg("");
+    try {
+      const r = await ownerFetch("/api/owner/banner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: bannerText, enabled: bannerOn }) });
+      setBannerMsg(r.ok ? "Banner saved." : "Couldn't save the banner.");
+    } catch (_) { setBannerMsg("Couldn't save the banner."); }
+  };
   const money = (c) => "$" + ((c || 0) / 100).toFixed(2);
   const live = BACKEND_LIVE;
 
@@ -5161,7 +5174,7 @@ function OwnerPortal({ setPage }) {
     loadReviews(pin);
     loadSubscribers(pin);
   };
-  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); loadReviews(pin); loadSubscribers(pin); } }, [authed]);
+  useEffect(() => { if (authed && live && pin) { loadInbox(pin); loadStats(pin); loadPromos(pin); loadReviews(pin); loadSubscribers(pin); loadBanner(); } }, [authed]);
 
   const markPaid = async (orderId) => {
     if (live) {
@@ -5592,6 +5605,33 @@ function OwnerPortal({ setPage }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Announcement banner */}
+      {live && (
+        <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
+          <div className="lp-eyebrow" style={{ marginBottom: 12 }}>Top banner</div>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, lineHeight: 1.6 }}>
+            A message shown across the top of every page. Leave the toggle off to hide it.
+          </p>
+          <input value={bannerText} onChange={(e) => setBannerText(e.target.value)} maxLength={200}
+            placeholder="e.g. Free bacteriostatic water on orders over $150"
+            style={{ width: "100%", fontSize: 13.5, padding: "10px 12px", marginBottom: 10 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={bannerOn} onChange={(e) => setBannerOn(e.target.checked)} />
+              Show banner
+            </label>
+            <button className="lp-btn lp-btn-solid" onClick={saveBanner} style={{ fontSize: 12.5 }}>Save banner</button>
+            {bannerMsg && <span style={{ fontSize: 12, color: "var(--gold-bright)" }}>{bannerMsg}</span>}
+          </div>
+          {bannerText && bannerOn && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Preview</div>
+              <div style={{ background: "linear-gradient(90deg, var(--brown-mid), var(--gold) 50%, var(--brown-mid))", color: "var(--bg)", padding: "9px 20px", textAlign: "center", fontSize: 13, fontWeight: 600 }}>{bannerText}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -7114,6 +7154,15 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
   // the fetch lands to trigger a single re-render with real stock applied.
   const [, setStockTick] = useState(0);
   useEffect(() => { loadStock().then(() => setStockTick((n) => n + 1)); }, []);
+  // Owner-editable announcement banner, loaded once at startup.
+  const [banner, setBanner] = useState(null);
+  const [bannerHidden, setBannerHidden] = useState(false);
+  useEffect(() => {
+    if (!BACKEND_LIVE) return;
+    (async () => {
+      try { const r = await fetch(API_BASE + "/api/banner"); if (r.ok) { const d = await r.json(); setBanner(d.banner); } } catch (_) {}
+    })();
+  }, []);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [cart, setCart] = useState([]);
   const [showNewsletter, setShowNewsletter] = useState(false);
@@ -7187,6 +7236,15 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
 
   return (
     <div className="lp-root">
+      {banner && banner.enabled && banner.text && !bannerHidden && (
+        <div style={{ background: "linear-gradient(90deg, var(--brown-mid), var(--gold) 50%, var(--brown-mid))", color: "var(--bg)", position: "relative", zIndex: 60 }}>
+          <div style={{ maxWidth: 1240, margin: "0 auto", padding: "9px 40px 9px 20px", textAlign: "center", fontSize: 13, fontWeight: 600, letterSpacing: "0.01em" }}>
+            {banner.text}
+            <button onClick={() => setBannerHidden(true)} aria-label="Dismiss announcement"
+              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--bg)", fontSize: 18, lineHeight: 1, cursor: "pointer", opacity: 0.7, padding: "0 6px" }}>×</button>
+          </div>
+        </div>
+      )}
       <Header page={page} setPage={setPage} cartCount={cartCount} userEmail={userEmail} onLogout={onLogout} />
       {page === "home" && <Home setPage={setPage} addToCart={addToCart} openProduct={openProduct} />}
       {page === "shop" && <Shop setPage={setPage} openProduct={openProduct} addToCart={addToCart} recentlyViewed={recentlyViewed} />}
