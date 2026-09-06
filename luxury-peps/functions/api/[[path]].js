@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-23.2";
+const BACKEND_VERSION = "2026-07-25.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -74,7 +74,7 @@ const J = (obj, status = 200) => new Response(JSON.stringify(obj), {
   },
 });
 
-function priceOrder(items, ambassadorPct, promo) {
+function priceOrder(items, ambassadorPct, promo, customerDiscountPct) {
   let subtotal = 0;
   const lines = [];
   for (const it of items || []) {
@@ -105,9 +105,10 @@ function priceOrder(items, ambassadorPct, promo) {
   //  - the affiliate earns their own rate (ambassadorPct: 0.10 or 0.15), which the
   //    customer never sees and which is what you owe the affiliate.
   const commRate = ambassadorPct || 0;
-  const usingCode = commRate > 0;
-  const discount = usingCode ? Math.round(subtotal * AFFILIATE_CUSTOMER_DISCOUNT) : 0;
-  const commission = usingCode ? Math.round(subtotal * commRate) : 0;
+  const custRate = (typeof customerDiscountPct === "number" && customerDiscountPct >= 0) ? customerDiscountPct : AFFILIATE_CUSTOMER_DISCOUNT;
+  const usingCode = commRate > 0 || custRate > 0;
+  const discount = usingCode ? Math.round(subtotal * custRate) : 0;
+  const commission = (commRate > 0) ? Math.round(subtotal * commRate) : 0;
   const afterAmb = Math.max(0, subtotal - discount);
   // Promo stacks on top of any ambassador discount, applied to the remainder.
   let promoDiscount = 0;
@@ -271,6 +272,7 @@ async function ensureSchema(db) {
   await t("alter table orders add column promo_discount_cents integer not null default 0");
   await t("alter table orders add column tracking text");
   await t("alter table orders add column shipped_at text");
+  await t("alter table ambassadors add column discount_pct real not null default 0.10");
   await t("alter table orders add column anet_trans_id text");
   await t("create table if not exists promos (code text primary key, kind text not null default 'pct', value integer not null default 0, active integer not null default 1, expires_at text, max_uses integer, uses integer not null default 0, created_at text not null default (datetime('now')))");
   await t("create table if not exists events (id integer primary key autoincrement, event text, product_id text, referrer text, created_at text default (datetime('now')))");
@@ -718,6 +720,31 @@ export async function onRequest(context) {
       }
       return J({ ok: true });
     }
+
+    // Owner-triggered: email a customer a link to review the products they bought.
+    // Reuses the verified-purchase review flow — the link lands on the review page
+    // with their order prefilled; they can only review items they actually ordered.
+    if (path === "/api/owner/request-review" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const order = await db.first("select reference, email, status from orders where reference=?", body.orderId);
+      if (!order || !order.email) return J({ error: "Order not found or has no email." }, 404);
+      if (order.status !== "paid" && order.status !== "shipped") return J({ error: "Only paid or shipped orders can be reviewed." }, 400);
+      const origin = new URL(request.url).origin;
+      const link = origin + "/?review=" + encodeURIComponent(order.reference);
+      const res = await sendEmail(env, {
+        to: order.email,
+        subject: "How was your Luxury Peps order? Leave a review",
+        html: `<div style="font-family:Arial,sans-serif;max-width:520px;color:#1a1a1a">
+          <h2 style="margin:0 0 10px">How did we do?</h2>
+          <p style="line-height:1.6">Thanks again for your order <strong>${order.reference}</strong>. If your compounds arrived in good order, a short review would mean a lot — and it helps other researchers buy with confidence.</p>
+          <p style="margin:22px 0"><a href="${link}" style="background:#B08243;color:#0A0705;padding:12px 22px;text-decoration:none;border-radius:4px;font-weight:600;display:inline-block">Leave a review</a></p>
+          <p style="font-size:12px;color:#666;line-height:1.5">You're receiving this because you placed an order at luxurypeps.com. Reviews are published only from verified purchases.</p>
+        </div>`,
+      }, db);
+      if (res && res.ok === false) return J({ error: "Email failed to send.", detail: res.error || "" }, 502);
+      return J({ ok: true });
+    }
+
     if (path === "/api/owner/archive" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
       try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
@@ -863,7 +890,7 @@ export async function onRequest(context) {
     // ---- OWNER: ambassadors ---------------------------------------------
     if (path === "/api/owner/ambassadors" && method === "GET") {
       if (!ownerOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
-      const rows = await db.all("select code, creator, pct, portal_pin, builtin from ambassadors where active=1 order by builtin desc, code");
+      const rows = await db.all("select code, creator, pct, discount_pct, portal_pin, builtin from ambassadors where active=1 order by builtin desc, code");
       return J({ ambassadors: rows.map((r) => ({ ...r, builtin: !!r.builtin })) });
     }
     if (path === "/api/owner/ambassadors" && method === "POST") {
@@ -877,7 +904,7 @@ export async function onRequest(context) {
       if (!Number.isFinite(pct) || pct < 0 || pct > 1) return J({ error: "pct must be 0–1 (e.g. 0.10)." }, 400);
       if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code already exists." }, 409);
-      await db.run("insert into ambassadors (code, creator, pct, portal_pin, builtin) values (?, ?, ?, ?, 0)", code, creator, pct, portalPin);
+      await db.run("insert into ambassadors (code, creator, pct, discount_pct, portal_pin, builtin) values (?, ?, ?, ?, ?, 0)", code, creator, pct, (Number.isFinite(Number(body.discountPct)) ? Number(body.discountPct) : 0.10), portalPin);
       return J({ ok: true });
     }
     if (path.startsWith("/api/owner/ambassadors/") && method === "DELETE") {
@@ -937,9 +964,9 @@ export async function onRequest(context) {
     const codeMatch = path.match(/^\/api\/code\/([^/]+)$/);
     if (codeMatch && method === "GET") {
       const code = upper(decodeURIComponent(codeMatch[1]));
-      const a = await db.first("select code, creator, pct from ambassadors where code=? and active=1", code);
+      const a = await db.first("select code, creator, pct, discount_pct from ambassadors where code=? and active=1", code);
       if (!a) return J({ valid: false });
-      return J({ valid: true, code: a.code, creator: a.creator, pct: a.pct });
+      return J({ valid: true, code: a.code, creator: a.creator, pct: a.pct, discountPct: a.discount_pct });
     }
 
     // ---- AMBASSADOR portal: stats (GET /api/creator/:code/stats?pin=) ----
@@ -971,9 +998,9 @@ export async function onRequest(context) {
       if (!env.ANET_API_LOGIN_ID || !env.ANET_TRANSACTION_KEY) return J({ error: "Card payment isn't configured yet." }, 501);
       const code = body.code ? upper(body.code) : null;
       let pct = 0;
-      if (code) { const a = await db.first("select pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; }
+      let custPct; if (code) { const a = await db.first("select pct, discount_pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; custPct = a ? a.discount_pct : undefined; }
       const promo = await loadPromo(db, body.promo);
-      const p = priceOrder(body.items, pct, promo);
+      const p = priceOrder(body.items, pct, promo, custPct);
       if (!p.lines.length) return J({ error: "No valid items." }, 400);
       const reference = newReference();
       await db.run("insert into orders (reference, email, method, code, status, subtotal_cents, discount_cents, shipping_cents, total_cents, commission_cents, customer, certified, promo_code, promo_discount_cents) values (?, ?, 'card', ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?)", reference, body.email || null, code, p.subtotal, p.discount, p.shipping, p.total, p.commission, JSON.stringify(body.customer || {}), body.certifiedResearchUse ? 1 : 0, promo ? promo.code : null, p.promoDiscount);
@@ -1136,9 +1163,9 @@ export async function onRequest(context) {
     if (path === "/api/manual-order" && method === "POST") {
       const code = body.code ? upper(body.code) : null;
       let pct = 0;
-      if (code) { const a = await db.first("select pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; }
+      let custPct; if (code) { const a = await db.first("select pct, discount_pct from ambassadors where code=? and active=1", code); pct = a ? a.pct : 0; custPct = a ? a.discount_pct : undefined; }
       const promo = await loadPromo(db, body.promo);
-      const p = priceOrder(body.items, pct, promo);
+      const p = priceOrder(body.items, pct, promo, custPct);
       if (!p.lines.length) return J({ error: "No valid items." }, 400);
       const reference = newReference();
       if (promo) { try { await db.run("update promos set uses = uses + 1 where code=?", promo.code); } catch (_) {} }
