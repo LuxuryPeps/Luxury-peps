@@ -2124,6 +2124,10 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
 
       <SpecTable p={p} />
 
+      <button onClick={() => setPage("calculator")} style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, background: "none", border: "1px solid var(--line)", color: "var(--gold-bright)", padding: "10px 16px", cursor: "pointer", fontSize: 13 }}>
+        <Beaker size={14} /> Reconstitution calculator →
+      </button>
+
       <div id="lp-reviews" style={{ marginTop: 72, scrollMarginTop: 90 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 6, flexWrap: "wrap" }}>
           <h3 className="lp-serif" style={{ fontSize: 28 }}>Reviews</h3>
@@ -2711,7 +2715,7 @@ function Checkout({ cart, setPage, addToCart }) {
       try {
         const res = await fetch(API_BASE + "/api/code/" + encodeURIComponent(key));
         const d = await res.json().catch(() => ({}));
-        if (d && d.valid) { setAppliedCode({ code: d.code, creator: d.creator, pct: d.pct }); setCodeError(""); setCodeInput(""); return; }
+        if (d && d.valid) { setAppliedCode({ code: d.code, creator: d.creator, pct: d.pct, discountPct: d.discountPct }); setCodeError(""); setCodeInput(""); return; }
       } catch (_) { setCodeError("Couldn't check that code. Try again."); return; }
       try {
         const res2 = await fetch(API_BASE + "/api/promo/" + encodeURIComponent(key));
@@ -2751,7 +2755,7 @@ function Checkout({ cart, setPage, addToCart }) {
         if (BACKEND_LIVE) {
           const res = await fetch(API_BASE + "/api/code/" + encodeURIComponent(key));
           const d = await res.json().catch(() => ({}));
-          if (d && d.valid) { setCodeInput(key); setAppliedCode({ code: d.code, creator: d.creator, pct: d.pct }); }
+          if (d && d.valid) { setCodeInput(key); setAppliedCode({ code: d.code, creator: d.creator, pct: d.pct, discountPct: d.discountPct }); }
         } else {
           const codes = allCreatorCodes();
           if (codes[key]) { setCodeInput(key); setAppliedCode({ code: key, ...codes[key] }); }
@@ -2765,10 +2769,10 @@ function Checkout({ cart, setPage, addToCart }) {
   const subtotalCents = Math.round(subtotal * 100);
   // Flat 10% for using any affiliate code — must match the server's
   // AFFILIATE_CUSTOMER_DISCOUNT, or the shown total won't equal the charged total.
-  const AFFILIATE_CUSTOMER_DISCOUNT = 0.10;
+  const appliedDiscountRate = appliedCode ? (typeof appliedCode.discountPct === "number" ? appliedCode.discountPct : 0.10) : 0;
   const bundleDiscountCents = cartBundleDiscountCents(items);
   const afterBundleCents = Math.max(0, subtotalCents - bundleDiscountCents);
-  const creatorDiscountCents = appliedCode ? Math.round(afterBundleCents * AFFILIATE_CUSTOMER_DISCOUNT) : 0;
+  const creatorDiscountCents = appliedCode ? Math.round(afterBundleCents * appliedDiscountRate) : 0;
   const afterAmbCents = Math.max(0, afterBundleCents - creatorDiscountCents);
   const promoDiscountCents = !appliedPromo ? 0
     : appliedPromo.kind === "amount" ? Math.min(Math.max(0, appliedPromo.value), afterAmbCents)
@@ -4431,7 +4435,7 @@ function buildCreatorFromOrders(orders, code, info) {
 
 // Expandable order row: tap to reveal items, shipping address, and payment;
 // includes a Mark-as-Paid action (works live via API or locally in browser mode).
-function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, onArchive, canMarkPaid }) {
+function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, onArchive, onRequestReview, canMarkPaid }) {
   const [open, setOpen] = useState(false);
   const paid = /(paid|shipped)/i.test(o.status || "") && !/await/i.test(o.status || "");
   const shipped = /shipped/i.test(o.status || "");
@@ -4495,6 +4499,7 @@ function OrderRow({ o, first, onMarkPaid, onMarkUnpaid, onMarkShipped, onArchive
               {shipped && (
                 <>
                   <span style={{ fontSize: 11.5, color: "#9ec3ee", display: "inline-flex", alignItems: "center", gap: 5 }}><Truck size={13} /> Shipped</span>
+                  {canMarkPaid && o.email && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onRequestReview(o.id); }} style={{ padding: "5px 10px", fontSize: 11 }}>Request review</button>}
                   {canMarkPaid && <button className="lp-btn" onClick={(e) => { e.stopPropagation(); onMarkPaid(o.id); }} style={{ fontSize: 10.5, padding: "5px 10px" }}>Back to paid</button>}
                 </>
               )}
@@ -4958,7 +4963,7 @@ function OwnerPortal({ setPage }) {
   const [invLoaded, setInvLoaded] = useState(false);
   const [customAmb, setCustomAmb] = useState([]); // [{ code, creator, pct, pin }]
   const [ambLoaded, setAmbLoaded] = useState(false);
-  const [newAmb, setNewAmb] = useState({ creator: "", code: "", pct: "10", pin: "" });
+  const [newAmb, setNewAmb] = useState({ creator: "", code: "", pct: "10", discount: "10", pin: "" });
   const [ambError, setAmbError] = useState("");
   const [localOrders, setLocalOrders] = useState([]); // orders saved on this device (browser mode)
   const [inboxMsgs, setInboxMsgs] = useState([]);
@@ -5061,26 +5066,28 @@ function OwnerPortal({ setPage }) {
     const code = newAmb.code.trim().toUpperCase();
     const creator = newAmb.creator.trim();
     const pct = parseFloat(newAmb.pct);
+    const discount = parseFloat(newAmb.discount);
     const portalPin = newAmb.pin.trim();
     if (!creator) { setAmbError("Enter the ambassador's name."); return; }
     if (!/^[A-Z0-9]{3,}$/.test(code)) { setAmbError("Code must be 3+ letters/numbers, no spaces."); return; }
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setAmbError("Commission must be between 0 and 100%."); return; }
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setAmbError("Customer discount must be between 0 and 100%."); return; }
     if (!/^[0-9]{4,}$/.test(portalPin)) { setAmbError("PIN must be at least 4 digits."); return; }
     if (live) {
       try {
         const res = await ownerFetch("/api/owner/ambassadors", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, creator, pct: pct / 100, portalPin }),
+          body: JSON.stringify({ code, creator, pct: pct / 100, discountPct: discount / 100, portalPin }),
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) { setAmbError(d.error || "Couldn't add ambassador."); return; }
-        setNewAmb({ creator: "", code: "", pct: "10", pin: "" }); setAmbError(""); refresh();
+        setNewAmb({ creator: "", code: "", pct: "10", discount: "10", pin: "" }); setAmbError(""); refresh();
       } catch (_) { setAmbError("Couldn't reach the server. Try again."); }
       return;
     }
     if (Object.keys(CREATOR_CODES).includes(code) || customAmb.some((a) => String(a.code).toUpperCase() === code)) { setAmbError("That code already exists."); return; }
     setCustomAmb((prev) => [...prev, { code, creator, pct: pct / 100, pin: portalPin }]);
-    setNewAmb({ creator: "", code: "", pct: "10", pin: "" });
+    setNewAmb({ creator: "", code: "", pct: "10", discount: "10", pin: "" });
     setAmbError("");
   };
   const removeAmbassador = async (code) => {
@@ -5342,6 +5349,18 @@ function OwnerPortal({ setPage }) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = "luxury-peps-orders.csv"; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const requestReview = async (orderId) => {
+    if (!live) { window.alert("Review requests send from the live site."); return; }
+    if (!window.confirm("Email this customer a request to review their order?")) return;
+    try {
+      const res = await ownerFetch("/api/owner/request-review", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      window.alert(res.ok ? "Review request sent." : (d.error || "Couldn't send the review request."));
+    } catch (_) { window.alert("Couldn't send the review request."); }
   };
   const markShipped = async (orderId) => {
     const tracking = window.prompt("Tracking number (optional — leave blank and press OK to skip). The customer gets a shipping email either way:", "");
@@ -5848,8 +5867,12 @@ function OwnerPortal({ setPage }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 12 }}>
           <input value={newAmb.creator} onChange={(e) => setNewAmb((n) => ({ ...n, creator: e.target.value }))} placeholder="Name" style={ambInput} />
           <input value={newAmb.code} onChange={(e) => setNewAmb((n) => ({ ...n, code: e.target.value.toUpperCase() }))} placeholder="CODE" style={{ ...ambInput, letterSpacing: "0.08em" }} />
-          <div style={{ position: "relative" }}>
-            <input value={newAmb.pct} onChange={(e) => setNewAmb((n) => ({ ...n, pct: e.target.value }))} placeholder="10" inputMode="decimal" style={{ ...ambInput, paddingRight: 26 }} />
+          <div style={{ position: "relative" }} title="Commission you pay the affiliate">
+            <input value={newAmb.pct} onChange={(e) => setNewAmb((n) => ({ ...n, pct: e.target.value }))} placeholder="Commission" inputMode="decimal" style={{ ...ambInput, paddingRight: 26 }} />
+            <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 13 }}>%</span>
+          </div>
+          <div style={{ position: "relative" }} title="Discount the customer gets for using the code">
+            <input value={newAmb.discount} onChange={(e) => setNewAmb((n) => ({ ...n, discount: e.target.value }))} placeholder="Cust. off" inputMode="decimal" style={{ ...ambInput, paddingRight: 26 }} />
             <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 13 }}>%</span>
           </div>
           <input value={newAmb.pin} onChange={(e) => setNewAmb((n) => ({ ...n, pin: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="PIN (4+ digits)" inputMode="numeric" style={ambInput} />
@@ -5857,7 +5880,7 @@ function OwnerPortal({ setPage }) {
         {ambError && <div style={{ color: "#e0a0a0", fontSize: 12, marginBottom: 10 }}>{ambError}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <button className="lp-btn lp-btn-solid" onClick={addAmbassador} style={{ fontSize: 12 }}>Add ambassador</button>
-          <span style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>They get {newAmb.pct || "10"}% off to share; you owe {newAmb.pct || "10"}% commission per order.</span>
+          <span style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>Customer gets {newAmb.discount || "10"}% off; you pay {newAmb.pct || "10"}% commission per order.</span>
         </div>
       </div>
 
@@ -5923,7 +5946,7 @@ function OwnerPortal({ setPage }) {
               ) : (
                 <div style={{ fontSize: 12.5 }}>
                   {filtered.map((o, i) => (
-                    <OrderRow key={o.id} o={o} first={i === 0} onMarkPaid={markPaid} onMarkUnpaid={markUnpaid} onMarkShipped={markShipped} onArchive={archiveOrder} canMarkPaid={!sampleMode} />
+                    <OrderRow key={o.id} o={o} first={i === 0} onMarkPaid={markPaid} onMarkUnpaid={markUnpaid} onMarkShipped={markShipped} onArchive={archiveOrder} onRequestReview={requestReview} canMarkPaid={!sampleMode} />
                   ))}
                   {(q || statusFilter !== "all") && <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 0 6px" }}>{filtered.length} of {all.length} orders</div>}
                 </div>
