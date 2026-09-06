@@ -472,23 +472,23 @@ const FLAT_SHIP = 12;
 // puts each vial in the cart at its normal price. No bundle-level discount.
 const BUNDLES = [
   { id: "b1", name: "Recovery Stack", tagline: "Soft-tissue & healing research pairing.",
-    items: ["p01", "p02"] },
+    items: ["p01", "p02"], discountPct: 0.15 },
   { id: "b2", name: "GH Secretagogue Stack", tagline: "Classic GHRH + GHRP research combination.",
-    items: ["p05", "p06"] },
+    items: ["p05", "p06"], discountPct: 0.15 },
   { id: "b3", name: "Metabolic Research Kit", tagline: "Leading GLP-1 class compounds, together.",
-    items: ["p03", "p04"] },
+    items: ["p03", "p04"], discountPct: 0.15 },
   { id: "b4", name: "Longevity Trio", tagline: "Epithalon, MOTS-c, and NAD+.",
-    items: ["p09", "p19", "p22"] },
+    items: ["p09", "p19", "p22"], discountPct: 0.15 },
   { id: "b5", name: "Nootropic Stack", tagline: "Selank & Semax — the classic cognitive research pair.",
-    items: ["p11", "p12"] },
+    items: ["p11", "p12"], discountPct: 0.15 },
   { id: "b6", name: "Mitochondrial Kit", tagline: "SS-31, MOTS-c, and NAD+ for cellular-energy research.",
-    items: ["p24", "p19", "p22"] },
+    items: ["p24", "p19", "p22"], discountPct: 0.15 },
   { id: "b7", name: "Cutaneous Research Kit", tagline: "GHK-Cu, BPC-157, and Glutathione.",
-    items: ["p08", "p01", "p28"] },
+    items: ["p08", "p01", "p28"], discountPct: 0.15 },
   { id: "b8", name: "Advanced GH Stack", tagline: "CJC-1295 + Ipamorelin blend, paired with Sermorelin.",
-    items: ["p33", "p15"] },
+    items: ["p33", "p15"], discountPct: 0.15 },
   { id: "b9", name: "Reconstitution Starter", tagline: "BPC-157, TB-500, and bacteriostatic water to begin.",
-    items: ["p01", "p02", "p27"] },
+    items: ["p01", "p02", "p27"], discountPct: 0.15 },
 ];
 // Kits are a convenience: one tap adds every vial at its normal price. There is
 // no bundle-level discount — the cards previously advertised one that checkout
@@ -496,7 +496,30 @@ const BUNDLES = [
 function bundlePricing(bundle) {
   const prods = bundle.items.map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean);
   const fullCents = prods.reduce((s, p) => s + centsOf(p.variants[0].price), 0);
-  return { prods, fullCents };
+  const pct = bundle.discountPct || 0;
+  const discountCents = Math.round(fullCents * pct);
+  const kitCents = fullCents - discountCents;
+  return { prods, fullCents, discountCents, kitCents, pct };
+}
+
+// Mirrors the backend: given cart items, returns the best single bundle discount
+// (in cents) earned by having every member of a kit present. Display only — the
+// server recomputes and is the source of truth for the charge.
+function cartBundleDiscountCents(items) {
+  const haveQty = {}, priceOf = {};
+  for (const i of items) {
+    const pid = i.id;
+    haveQty[pid] = (haveQty[pid] || 0) + i.qty;
+    if (i.variant) priceOf[pid] = centsOf(i.variant.price);
+  }
+  let best = 0;
+  for (const b of BUNDLES) {
+    if (!b.items.every((m) => (haveQty[m] || 0) >= 1)) continue;
+    const full = b.items.reduce((sm, m) => sm + (priceOf[m] || 0), 0);
+    const d = Math.round(full * (b.discountPct || 0));
+    if (d > best) best = d;
+  }
+  return best;
 }
 
 // ── Apparel / merch ───────────────────────────────────────────────────────
@@ -1387,7 +1410,7 @@ function Home({ setPage, addToCart, openProduct }) {
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 22 }}>
           {BUNDLES.map((b) => {
-            const { prods, fullCents } = bundlePricing(b);
+            const { prods, fullCents, kitCents, discountCents, pct } = bundlePricing(b);
             const added = addedBundle === b.id;
             return (
               <div key={b.id} className="lp-card" style={{ padding: 22, display: "flex", flexDirection: "column" }}>
@@ -1408,7 +1431,15 @@ function Home({ setPage, addToCart, openProduct }) {
                 </div>
                 <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <span style={{ color: "var(--gold-bright)", fontSize: 18 }}>${cents2(fullCents)}</span>
+                    {discountCents > 0 ? (
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ color: "var(--muted)", fontSize: 13, textDecoration: "line-through" }}>${cents2(fullCents)}</span>
+                        <span style={{ color: "var(--gold-bright)", fontSize: 18 }}>${cents2(kitCents)}</span>
+                        <span style={{ fontSize: 10, color: "var(--gold)", border: "1px solid var(--line)", padding: "2px 6px", letterSpacing: "0.04em" }}>SAVE {Math.round(pct * 100)}%</span>
+                      </div>
+                    ) : (
+                      <span style={{ color: "var(--gold-bright)", fontSize: 18 }}>${cents2(fullCents)}</span>
+                    )}
                   </div>
                   <button className="lp-btn" style={{ padding: "9px 14px", fontSize: 11, display: "flex", alignItems: "center", gap: 5 }} onClick={() => addBundle(b)}>
                     {added ? <><Check size={12} /> Added</> : <><Plus size={12} /> Add Kit</>}
@@ -2493,6 +2524,11 @@ function Cart({ cart, setPage, updateQty, removeItem, addToCart }) {
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14 }}>
             <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${cents2(subtotalCents)}</span>
           </div>
+          {cartBundleDiscountCents(items) > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14, color: "var(--gold-bright)" }}>
+              <span>Bundle discount</span><span>−${cents2(cartBundleDiscountCents(items))}</span>
+            </div>
+          )}
           {subtotal >= FREE_WATER_THRESHOLD && (
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 14, color: "var(--gold-bright)" }}>
               <span>+ Bacteriostatic Water (free gift)</span><span>$0.00</span>
@@ -2687,8 +2723,10 @@ function Checkout({ cart, setPage, addToCart }) {
   // Flat 10% for using any affiliate code — must match the server's
   // AFFILIATE_CUSTOMER_DISCOUNT, or the shown total won't equal the charged total.
   const AFFILIATE_CUSTOMER_DISCOUNT = 0.10;
-  const creatorDiscountCents = appliedCode ? Math.round(subtotalCents * AFFILIATE_CUSTOMER_DISCOUNT) : 0;
-  const afterAmbCents = Math.max(0, subtotalCents - creatorDiscountCents);
+  const bundleDiscountCents = cartBundleDiscountCents(items);
+  const afterBundleCents = Math.max(0, subtotalCents - bundleDiscountCents);
+  const creatorDiscountCents = appliedCode ? Math.round(afterBundleCents * AFFILIATE_CUSTOMER_DISCOUNT) : 0;
+  const afterAmbCents = Math.max(0, afterBundleCents - creatorDiscountCents);
   const promoDiscountCents = !appliedPromo ? 0
     : appliedPromo.kind === "amount" ? Math.min(Math.max(0, appliedPromo.value), afterAmbCents)
     : appliedPromo.kind === "pct" ? Math.round(afterAmbCents * (Math.min(100, Math.max(0, appliedPromo.value)) / 100))
@@ -3049,6 +3087,11 @@ function Checkout({ cart, setPage, addToCart }) {
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8 }}>
               <span style={{ color: "var(--muted)" }}>Subtotal</span><span>${usd2(subtotal)}</span>
             </div>
+            {bundleDiscountCents > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8, color: "var(--gold-bright)" }}>
+                <span>Bundle discount</span><span>−${cents2(bundleDiscountCents)}</span>
+              </div>
+            )}
             {subtotal >= FREE_WATER_THRESHOLD && (
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 8, color: "var(--gold-bright)" }}>
                 <span>+ Bacteriostatic Water (free gift)</span><span>$0.00</span>
