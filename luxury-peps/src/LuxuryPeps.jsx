@@ -493,6 +493,47 @@ const BUNDLES = [
 // Kits are a convenience: one tap adds every vial at its normal price. There is
 // no bundle-level discount — the cards previously advertised one that checkout
 // never applied, which meant charging more than the price shown.
+// Accepted-card marks + secure-checkout reassurance, shown at the payment step.
+function PaymentTrust() {
+  const cards = [
+    { label: "VISA", color: "#1a1f71", bg: "#ffffff" },
+    { label: "MC", color: "#eb001b", bg: "#ffffff" },
+    { label: "AMEX", color: "#2e77bc", bg: "#ffffff" },
+    { label: "DISC", color: "#f68121", bg: "#ffffff" },
+  ];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        {cards.map((c) => (
+          <span key={c.label} style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.02em", color: c.color, background: c.bg, borderRadius: 3, padding: "3px 6px", lineHeight: 1, fontFamily: "Inter, sans-serif" }}>{c.label}</span>
+        ))}
+      </div>
+      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "var(--muted)" }}>
+        <Lock size={12} /> Secure 256-bit encrypted checkout
+      </span>
+    </div>
+  );
+}
+
+// Compact reassurance strip for the decision moment (product page / cart).
+function TrustStrip({ style = {} }) {
+  const items = [
+    { icon: <Beaker size={14} />, t: "Third-party HPLC tested" },
+    { icon: <ShieldCheck size={14} />, t: "COA with every batch" },
+    { icon: <Truck size={14} />, t: "Discreet, fast shipping" },
+    { icon: <Lock size={14} />, t: "Secure checkout" },
+  ];
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 18px", padding: "12px 0", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", ...style }}>
+      {items.map((it, i) => (
+        <span key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+          <span style={{ color: "var(--gold)" }}>{it.icon}</span>{it.t}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function bundlePricing(bundle) {
   const prods = bundle.items.map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean);
   const fullCents = prods.reduce((s, p) => s + centsOf(p.variants[0].price), 0);
@@ -2076,6 +2117,8 @@ function ProductDetail({ productId, setPage, addToCart, openProduct, recentlyVie
               <Truck size={14} /> Pre-order — ships in {SITE_CONFIG.preorderShipEstimate} when stock arrives.
             </div>
           )}
+
+          <TrustStrip style={{ marginTop: 20 }} />
         </div>
       </div>
 
@@ -3001,6 +3044,7 @@ function Checkout({ cart, setPage, addToCart }) {
             </div>
           )}
           </div>
+          <PaymentTrust />
 
           <div style={{ border: "1px solid var(--line)", padding: "22px 24px", marginBottom: 18 }}>
           <div className="lp-eyebrow" style={{ marginBottom: 16 }}>Buyer Certification</div>
