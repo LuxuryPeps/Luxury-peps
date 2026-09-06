@@ -479,6 +479,16 @@ const BUNDLES = [
     items: ["p03", "p04"] },
   { id: "b4", name: "Longevity Trio", tagline: "Epithalon, MOTS-c, and NAD+.",
     items: ["p09", "p19", "p22"] },
+  { id: "b5", name: "Nootropic Stack", tagline: "Selank & Semax — the classic cognitive research pair.",
+    items: ["p11", "p12"] },
+  { id: "b6", name: "Mitochondrial Kit", tagline: "SS-31, MOTS-c, and NAD+ for cellular-energy research.",
+    items: ["p24", "p19", "p22"] },
+  { id: "b7", name: "Cutaneous Research Kit", tagline: "GHK-Cu, BPC-157, and Glutathione.",
+    items: ["p08", "p01", "p28"] },
+  { id: "b8", name: "Advanced GH Stack", tagline: "CJC-1295 + Ipamorelin blend, paired with Sermorelin.",
+    items: ["p33", "p15"] },
+  { id: "b9", name: "Reconstitution Starter", tagline: "BPC-157, TB-500, and bacteriostatic water to begin.",
+    items: ["p01", "p02", "p27"] },
 ];
 // Kits are a convenience: one tap adds every vial at its normal price. There is
 // no bundle-level discount — the cards previously advertised one that checkout
