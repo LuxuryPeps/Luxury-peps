@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-23.1";
+const BACKEND_VERSION = "2026-07-23.2";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -31,6 +31,29 @@ const AFFILIATE_CUSTOMER_DISCOUNT = 0.10;
 // Free bacteriostatic water on qualifying orders (threshold on pre-discount subtotal).
 const FREE_WATER_THRESHOLD_CENTS = 15000;   // $150.00
 const FREE_WATER_VARIANT = "p27-A";
+const BUNDLE_KITS = [
+  { id: "b1", members: ["p01","p02"], pct: 0.15 },
+  { id: "b2", members: ["p05","p06"], pct: 0.15 },
+  { id: "b3", members: ["p03","p04"], pct: 0.15 },
+  { id: "b4", members: ["p09","p19","p22"], pct: 0.15 },
+  { id: "b5", members: ["p11","p12"], pct: 0.15 },
+  { id: "b6", members: ["p24","p19","p22"], pct: 0.15 },
+  { id: "b7", members: ["p08","p01","p28"], pct: 0.15 },
+  { id: "b8", members: ["p33","p15"], pct: 0.15 },
+  { id: "b9", members: ["p01","p02","p27"], pct: 0.15 },
+];
+function bundleDiscountCents(lineList) {
+  const haveQty = {}, priceOf = {};
+  for (const l of lineList) { haveQty[l.productId] = (haveQty[l.productId] || 0) + l.qty; priceOf[l.productId] = l.unitCents; }
+  let best = 0;
+  for (const kit of BUNDLE_KITS) {
+    if (!kit.members.every((m) => (haveQty[m] || 0) >= 1)) continue;
+    const kitFull = kit.members.reduce((s, m) => s + (priceOf[m] || 0), 0);
+    const d = Math.round(kitFull * kit.pct);
+    if (d > best) best = d;
+  }
+  return best;
+}
 // Analytics: only these events are accepted, and only this many per IP per hour.
 // A real visitor browsing hard might hit ~60; 200 leaves plenty of headroom.
 const TRACK_EVENTS = new Set(["page_view", "product_view", "checkout_start"]);
@@ -73,6 +96,10 @@ function priceOrder(items, ambassadorPct, promo) {
   if (earnsFreeWater && VARIANTS[FREE_WATER_VARIANT]) {
     lines.push({ variantId: FREE_WATER_VARIANT, productId: "p27", name: "Bacteriostatic Water (Free gift)", qty: 1, unitCents: 0, lineCents: 0, free: true });
   }
+  // Bundle discount: if the cart completes a kit, take it off the subtotal first.
+  const bundleDiscount = bundleDiscountCents(lines);
+  subtotal = Math.max(0, subtotal - bundleDiscount);
+
   // Customer discount and affiliate commission are now SEPARATE:
   //  - the shopper always gets AFFILIATE_CUSTOMER_DISCOUNT (10%) for using a code
   //  - the affiliate earns their own rate (ambassadorPct: 0.10 or 0.15), which the
@@ -94,7 +121,7 @@ function priceOrder(items, ambassadorPct, promo) {
   // ("free shipping on orders over $150") and the cart progress bar. Basing it
   // on the post-discount figure silently charged shipping the customer never saw.
   const shipping = subtotal > 0 && !freeShip && subtotal < FREE_SHIP ? FLAT_SHIP : 0;
-  return { lines, subtotal, discount, promoDiscount, shipping, total: afterDiscount + shipping, commission };
+  return { lines, subtotal, discount, promoDiscount, bundleDiscount, shipping, total: afterDiscount + shipping, commission };
 }
 
 // Validate a promo code server-side. Never trust the browser's copy.
