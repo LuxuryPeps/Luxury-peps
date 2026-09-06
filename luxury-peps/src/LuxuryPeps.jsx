@@ -306,11 +306,11 @@ const FONTS = (
 );
 
 const BASE_PRODUCTS = [
-  { id: "p03", no: "01", name: "GLP-1 SM", form: "Lyophilized Powder", purity: "99.3%", baseMg: 10, basePrice: 89.99, batchPrefix: "SMG-0741" },
-  { id: "p04", no: "02", name: "GLP-2 TZ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 64.99, batchPrefix: "TZP-0512", sizes: [{ mg: 10, price: 64.99 }, { mg: 20, price: 94.99 }] },
-  { id: "p21", no: "03", name: "GLP-3 RT", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 79.99, batchPrefix: "RET-3318", sizes: [{ mg: 10, price: 79.99 }, { mg: 20, price: 129.99 }] },
+  { id: "p03", no: "01", name: "GLP-1 SM", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 89.99, batchPrefix: "SMG-0741" },
+  { id: "p04", no: "02", name: "GLP-2 TZ", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 64.99, batchPrefix: "TZP-0512", sizes: [{ mg: 10, price: 64.99 }, { mg: 20, price: 94.99 }] },
+  { id: "p21", no: "03", name: "GLP-3 RT", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 79.99, batchPrefix: "RET-3318", sizes: [{ mg: 10, price: 79.99 }, { mg: 20, price: 129.99 }] },
   { id: "p01", no: "04", name: "BPC-157", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 44.99, batchPrefix: "BPC-2206" },
-  { id: "p02", no: "05", name: "TB-500", form: "Lyophilized Powder", purity: "98.7%", baseMg: 10, basePrice: 54.99, batchPrefix: "TB4-1190" },
+  { id: "p02", no: "05", name: "TB-500", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 54.99, batchPrefix: "TB4-1190" },
   { id: "p29", no: "06", name: "BPC-157 + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 119.99, batchPrefix: "BTB-2210" },
   { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500 (GLOW)", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 109.99, batchPrefix: "TRI-7010" },
   { id: "p35", no: "08", name: "BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 75, basePrice: 139.99, batchPrefix: "KLW-3512" },
@@ -318,21 +318,21 @@ const BASE_PRODUCTS = [
   { id: "p07", no: "09", name: "Melanotan II", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 44.99, batchPrefix: "MT2-8814" },
   { id: "p28", no: "10", name: "Glutathione", form: "Lyophilized Powder", purity: "99.3%", baseMg: 1500, basePrice: 71.99, batchPrefix: "GLU-6004" },
   { id: "p05", no: "11", name: "Ipamorelin", form: "Lyophilized Powder", purity: "99.4%", baseMg: 5, basePrice: 39.99, batchPrefix: "IPM-3387", sizes: [{ mg: 5, price: 39.99 }, { mg: 10, price: 59.99 }] },
-  { id: "p06", no: "12", name: "CJC-1295 (No DAC)", form: "Lyophilized Powder", purity: "98.9%", baseMg: 10, basePrice: 65.99, batchPrefix: "CJC-2049" },
+  { id: "p06", no: "12", name: "CJC-1295 (No DAC)", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 65.99, batchPrefix: "CJC-2049" },
   { id: "p33", no: "13", name: "CJC-1295 + Ipamorelin", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 81.99, batchPrefix: "CJI-1205" },
   { id: "p15", no: "14", name: "Sermorelin", form: "Lyophilized Powder", purity: "99.3%", baseMg: 10, basePrice: 59.99, batchPrefix: "SER-1849" },
   { id: "p31", no: "15", name: "Tesamorelin", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 54.99, batchPrefix: "TES-0470", sizes: [{ mg: 5, price: 54.99 }, { mg: 10, price: 74.99 }] },
-  { id: "p32", no: "16", name: "IGF-1 LR3", form: "Lyophilized Powder", purity: "98.8%", baseMg: 1, basePrice: 84.99, batchPrefix: "IGF-0190" },
+  { id: "p32", no: "16", name: "IGF-1 LR3", form: "Lyophilized Powder", purity: "99.0%", baseMg: 1, basePrice: 84.99, batchPrefix: "IGF-0190" },
   { id: "p09", no: "17", name: "Epithalon", form: "Lyophilized Powder", purity: "99.5%", baseMg: 10, basePrice: 60.99, batchPrefix: "EPI-6203" },
   { id: "p19", no: "18", name: "MOTS-c", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 48.99, batchPrefix: "MOT-2786" },
   { id: "p24", no: "19", name: "SS-31", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 79.99, batchPrefix: "SS3-1041" },
   { id: "p22", no: "20", name: "NAD+", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 59.99, batchPrefix: "NAD-5500" },
-  { id: "p25", no: "21", name: "VIP", form: "Lyophilized Powder", purity: "98.8%", baseMg: 10, basePrice: 69.99, batchPrefix: "VIP-3360" },
+  { id: "p25", no: "21", name: "VIP", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 69.99, batchPrefix: "VIP-3360" },
   { id: "p11", no: "22", name: "Selank", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 38.99, batchPrefix: "SEL-7732" },
   { id: "p12", no: "23", name: "Semax", form: "Lyophilized Powder", purity: "99.2%", baseMg: 5, basePrice: 39.99, batchPrefix: "SMX-2298" },
-  { id: "p23", no: "24", name: "Oxytocin Acetate", form: "Lyophilized Powder", purity: "98.9%", baseMg: 2, basePrice: 53.99, batchPrefix: "OXY-2208" },
+  { id: "p23", no: "24", name: "Oxytocin Acetate", form: "Lyophilized Powder", purity: "99.0%", baseMg: 2, basePrice: 53.99, batchPrefix: "OXY-2208" },
   { id: "p26", no: "25", name: "5-Amino-1MQ", form: "Lyophilized Powder", purity: "99.0%", baseMg: 5, basePrice: 69.99, batchPrefix: "5AM-1099" },
-  { id: "p30", no: "26", name: "HCG", form: "Lyophilized Powder", purity: "98.5%", baseMg: 10000, basePrice: 94.99, batchPrefix: "HCG-1000", unit: "IU" },
+  { id: "p30", no: "26", name: "HCG", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10000, basePrice: 94.99, batchPrefix: "HCG-1000", unit: "IU" },
   { id: "p27", no: "27", name: "Bacteriostatic Water", form: "0.9% Benzyl Alcohol Solution", purity: "USP-Grade", baseMg: 10, basePrice: 14.99, batchPrefix: "BAC-3001", unit: "mL", container: "vial" },
 ];
 
@@ -1342,7 +1342,7 @@ function Home({ setPage, addToCart, openProduct }) {
               <button className="lp-btn" onClick={() => setPage("guide")}>The Research Guide</button>
             </div>
             <div className="lp-hero-stats">
-              {[[String(PRODUCTS.length), "compounds catalogued"], ["\u2265 98%", "HPLC purity"], ["Every batch", "certificate on file"]].map(([n, l], idx) => (
+              {[[String(PRODUCTS.length), "compounds catalogued"], ["\u2265 99%", "HPLC purity"], ["Every batch", "certificate on file"]].map(([n, l], idx) => (
                 <div key={idx} style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
                   <span className="lp-serif" style={{ fontSize: 23, color: "var(--cream)" }}>{n}</span>
                   <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.03em", marginTop: 5 }}>{l}</span>
@@ -3516,7 +3516,7 @@ function Success({ setPage, clearCart }) {
 
 // ── Standards page ─────────────────────────────────────────────────────────
 // The credibility page for a chemical supplier. Every claim below restates
-// something the site already commits to (third-party HPLC, >=98% purity,
+// something the site already commits to (third-party HPLC, >=99% purity,
 // per-batch COA, cold-chain, unmarked packaging) or something structurally
 // true (batch prefixes, PubChem-verified published specs). Nothing new is
 // invented here — an unverifiable claim on this page would undo its purpose.
@@ -3526,7 +3526,7 @@ const STANDARD_SECTIONS = [
     body: [
       "Purity is measured by third-party High-Performance Liquid Chromatography before a compound is listed. HPLC separates a sample into its components and reports each as a proportion of total peak area, which is what a purity percentage actually means.",
       "Purity alone doesn't establish identity. Mass spectrometry is used alongside it to confirm the observed mass matches the compound's expected molecular weight — that the material is the molecule named, not merely a pure something. A sample can be 99% pure and still be the wrong compound.",
-      "Our listing threshold is 98%. Every compound in the catalogue is at or above it, and each product page states its own figure rather than a blanket claim.",
+      "Our listing threshold is 99%. Every compound in the catalogue is at or above it, and each product page states its own figure rather than a blanket claim.",
       "Compounds are compounded and third-party tested in the United States.",
     ],
   },
