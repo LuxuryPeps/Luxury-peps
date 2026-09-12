@@ -3934,7 +3934,7 @@ function AgeGate({ onConfirm, declined, onDecline }) {
               By entering, you confirm that you are at least <strong style={{ color: "var(--cream)" }}>21 years of age</strong>, that you are a qualified buyer, and that you agree to our Terms of Service.
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-              <button className="lp-btn lp-btn-solid" onClick={onConfirm}>I am 18 or older — Enter</button>
+              <button className="lp-btn lp-btn-solid" onClick={onConfirm}>I am 21 or older — Enter</button>
               <button className="lp-btn" onClick={() => onDecline && onDecline()} style={{ opacity: 0.7 }}>Exit</button>
             </div>
           </>
@@ -4606,17 +4606,29 @@ function MarketingPortal({ setPage }) {
 
   const loadAll = async (p) => {
     try {
-      const [o, t, a, pr] = await Promise.all([
+      const [o, t, a, pr, bn] = await Promise.all([
         mFetch("/api/marketing/overview", { pin: p }),
         mFetch(`/api/marketing/traffic?days=${days}`, { pin: p }),
         mFetch("/api/marketing/affiliates", { pin: p }),
         mFetch("/api/marketing/promos", { pin: p }),
+        mFetch("/api/marketing/banner", { pin: p }),
       ]);
       if (o.ok) setOv(await o.json());
       if (t.ok) setTraffic(await t.json());
       if (a.ok) setAffs((await a.json()).affiliates || []);
       if (pr.ok) setPromos((await pr.json()).promos || []);
+      if (bn && bn.ok) { const b = (await bn.json()).banner || {}; setBannerText(b.text || ""); setBannerOn(!!b.enabled); }
     } catch (_) { /* ignore */ }
+  };
+  const saveBanner = async () => {
+    setBannerSaved("");
+    try {
+      const r = await mFetch("/api/marketing/banner", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: bannerText, enabled: bannerOn }),
+      });
+      setBannerSaved(r.ok ? "Banner saved." : "Couldn't save the banner.");
+    } catch (_) { setBannerSaved("Couldn't save the banner."); }
   };
 
   const login = async (e) => {
@@ -4681,15 +4693,21 @@ function MarketingPortal({ setPage }) {
   // ---- promo create ----
   const [pCode, setPCode] = useState("");
   const [pOff, setPOff] = useState("10");
+  const [pKind, setPKind] = useState("pct");   // "pct" | "freeship"
+  const [pEnd, setPEnd] = useState("");          // optional end date (YYYY-MM-DD)
+  const [bannerText, setBannerText] = useState("");
+  const [bannerOn, setBannerOn] = useState(false);
+  const [bannerSaved, setBannerSaved] = useState("");
   const createPromo = async () => {
     setMsg("");
     const r = await mFetch("/api/marketing/promos", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: pCode, value: Number(pOff) }),
+      body: JSON.stringify({ code: pCode, kind: pKind, value: Number(pOff), expiresAt: pEnd || null }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { setMsg(d.error || "Couldn't create code."); return; }
-    setPCode(""); setPOff("10"); setMsg(`Promo code created (${pOff}% off).`);
+    setPCode(""); setPOff("10"); setPKind("pct"); setPEnd("");
+    setMsg(pKind === "freeship" ? "Free-shipping code created." : `Promo code created (${pOff}% off).`);
     loadAll(pin);
   };
   const togglePromo = async (code) => {
@@ -4906,16 +4924,44 @@ function MarketingPortal({ setPage }) {
         </div>
       </section>
 
+      {/* Site banner */}
+      <section style={{ marginBottom: 44 }}>
+        <h2 className="lp-serif" style={{ fontSize: 21, marginBottom: 6 }}>Site banner</h2>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 16 }}>The announcement bar across the top of the site. Turn it on and set the message.</p>
+        <div style={{ border: "1px solid var(--line)", padding: 18 }}>
+          <textarea value={bannerText} onChange={(e) => setBannerText(e.target.value)} maxLength={200} placeholder="e.g. Free bacteriostatic water on orders over $150 — this week only." rows={2} style={{ width: "100%", fontSize: 13.5, padding: "10px 12px", resize: "vertical", marginBottom: 12 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={bannerOn} onChange={(e) => setBannerOn(e.target.checked)} /> Show banner on the site
+            </label>
+            <span style={{ flex: 1 }} />
+            {bannerSaved && <span style={{ fontSize: 12, color: "var(--gold-bright)" }}>{bannerSaved}</span>}
+            <button className="lp-btn lp-btn-solid" onClick={saveBanner} style={{ fontSize: 12.5 }}>Save banner</button>
+          </div>
+        </div>
+      </section>
+
       {/* Promo codes */}
       <section style={{ marginBottom: 30 }}>
         <h2 className="lp-serif" style={{ fontSize: 21, marginBottom: 6 }}>Promo codes</h2>
-        <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 18 }}>Campaign codes give the customer a set % off at checkout.</p>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 18 }}>Campaign codes give the customer a discount or free shipping at checkout. Set an optional end date.</p>
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "stretch" }}>
-          <input value={pCode} onChange={(e) => setPCode(e.target.value.toUpperCase())} placeholder="NEW CODE e.g. LAUNCH" style={{ flex: "1 1 180px", fontSize: 13.5, padding: "10px 12px" }} />
-          <select value={pOff} onChange={(e) => setPOff(e.target.value)} style={{ fontSize: 13.5, padding: "10px 12px" }}>
-            {[5, 10, 15, 20, 25, 30].map((n) => <option key={n} value={String(n)}>{n}% off</option>)}
+        <div style={{ display: "flex", gap: 10, marginBottom: 8, flexWrap: "wrap", alignItems: "stretch" }}>
+          <input value={pCode} onChange={(e) => setPCode(e.target.value.toUpperCase())} placeholder="NEW CODE e.g. LAUNCH" style={{ flex: "1 1 160px", fontSize: 13.5, padding: "10px 12px" }} />
+          <select value={pKind} onChange={(e) => setPKind(e.target.value)} style={{ fontSize: 13.5, padding: "10px 12px" }}>
+            <option value="pct">% off</option>
+            <option value="freeship">Free shipping</option>
           </select>
+          {pKind === "pct" && (
+            <select value={pOff} onChange={(e) => setPOff(e.target.value)} style={{ fontSize: 13.5, padding: "10px 12px" }}>
+              {[5, 10, 15, 20, 25, 30].map((n) => <option key={n} value={String(n)}>{n}% off</option>)}
+            </select>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: "var(--muted)" }}>End date (optional)</label>
+          <input type="date" value={pEnd} onChange={(e) => setPEnd(e.target.value)} style={{ fontSize: 13.5, padding: "9px 12px", colorScheme: "dark" }} />
+          <span style={{ flex: 1 }} />
           <button className="lp-btn lp-btn-solid" onClick={createPromo} style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>Create code</button>
         </div>
 
