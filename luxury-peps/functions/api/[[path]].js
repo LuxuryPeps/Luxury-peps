@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-25.1";
+const BACKEND_VERSION = "2026-07-26.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -761,6 +761,21 @@ export async function onRequest(context) {
 
     // ==== MARKETING PORTAL (scoped contractor login) =======================
 
+    if (path === "/api/marketing/banner" && method === "GET") {
+      if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
+      const row = await db.first("select v from app_settings where k='banner'");
+      let banner = { enabled: false, text: "" };
+      if (row && row.v) { try { banner = JSON.parse(row.v); } catch (_) {} }
+      return J({ banner });
+    }
+    if (path === "/api/marketing/banner" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const banner = { enabled: !!body.enabled, text: String(body.text || "").slice(0, 200) };
+      await db.run("insert into app_settings (k, v, updated_at) values ('banner', ?, datetime('now')) on conflict(k) do update set v=excluded.v, updated_at=datetime('now')", JSON.stringify(banner));
+      return J({ ok: true, banner });
+    }
+
+
     // Aggregate performance only — revenue, orders, conversion, best sellers.
     // No customer names, emails, or addresses are ever returned here.
     if (path === "/api/marketing/overview" && method === "GET") {
@@ -874,11 +889,16 @@ export async function onRequest(context) {
       if (await db.first("select 1 from promos where code=?", code)) return J({ error: "That code already exists." }, 409);
       // Percentage is constrained server-side to 5-30 in steps of 5, so a tampered
       // request can't create (say) a 90%-off code even though the UI is a dropdown.
-      const pctOff = Math.round(Number(body.value) / 5) * 5;
-      if (!(pctOff >= 5 && pctOff <= 30)) return J({ error: "Discount must be 5%–30%." }, 400);
+      const _wantFreeship = body.kind === "freeship";
+      const pctOff = _wantFreeship ? 0 : Math.round(Number(body.value) / 5) * 5;
+      if (!_wantFreeship && !(pctOff >= 5 && pctOff <= 30)) return J({ error: "Discount must be 5-30%." }, 400);
       const expires = body.expiresAt ? String(body.expiresAt).slice(0, 10) : null;
       const maxUses = body.maxUses ? Math.max(1, parseInt(body.maxUses, 10) || 0) : null;
-      await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, 'pct', ?, 1, ?, ?)", code, pctOff, expires, maxUses);
+      if (_wantFreeship) {
+        await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, 'freeship', 0, 1, ?, ?)", code, expires, maxUses);
+      } else {
+        await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, 'pct', ?, 1, ?, ?)", code, pctOff, expires, maxUses);
+      }
       return J({ ok: true });
     }
     if (path === "/api/marketing/promos/toggle" && method === "POST") {
