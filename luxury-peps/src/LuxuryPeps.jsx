@@ -889,12 +889,17 @@ function track(event, productId) {
 
 // Fire a TikTok Pixel event (safe no-op if the pixel isn't loaded / is blocked).
 // Builds the standard { contents:[...], value, currency } shape from a product.
-function ttrack(event, prod, value) {
+function ttrack(event, items, value) {
   if (typeof window === "undefined" || typeof window.ttq === "undefined") return;
   try {
+    // items: array of { id, name, qty? }. Only send a contents array when we
+    // actually have product ids — TikTok rejects entries with an empty content_id.
+    const list = (Array.isArray(items) ? items : (items ? [items] : []))
+      .filter((it) => it && it.id)
+      .map((it) => ({ content_id: String(it.id), content_type: "product", content_name: it.name || String(it.id), quantity: it.qty || 1 }));
     const payload = { currency: "USD" };
     if (typeof value === "number") payload.value = Number(value.toFixed(2));
-    if (prod) payload.contents = [{ content_id: prod.id, content_type: "product", content_name: prod.name }];
+    if (list.length) payload.contents = list;
     window.ttq.track(event, payload);
   } catch (_) { /* never break the site over analytics */ }
 }
@@ -3385,7 +3390,8 @@ function Success({ setPage, clearCart }) {
     // TikTok Purchase event — same once-only guard, real order value.
     try {
       const amt = Number(order.total);
-      ttrack("Purchase", null, isFinite(amt) && amt > 0 ? amt : undefined);
+      const pItems = (order.items || []).map((it) => { const pr = PRODUCTS.find((x) => x.name === it.name); return pr ? { id: pr.id, name: pr.name, qty: it.qty } : null; }).filter(Boolean);
+      ttrack("Purchase", pItems, isFinite(amt) && amt > 0 ? amt : undefined);
     } catch (_) { /* never break the page */ }
   }, [order]);
 
@@ -7396,7 +7402,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
   const addToCart = (id, variantId, qty) => {
     const prod = PRODUCTS.find((x) => x.id === id);
     if (prod && isSoldOut(prod)) return;
-    if (prod) { const v = prod.variants.find((x) => x.id === variantId) || prod.variants[0]; ttrack("AddToCart", prod, (v ? v.price : 0) * (qty || 1)); }
+    if (prod) { const v = prod.variants.find((x) => x.id === variantId) || prod.variants[0]; ttrack("AddToCart", [{ id: prod.id, name: prod.name, qty: qty || 1 }], (v ? v.price : 0) * (qty || 1)); }
     setCart((c) => {
       const existing = c.find((i) => i.id === id && i.variantId === variantId);
       if (existing) return c.map((i) => (i.id === id && i.variantId === variantId ? { ...i, qty: i.qty + qty } : i));
@@ -7413,7 +7419,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
     setRecentlyViewed((prev) => [id, ...prev.filter((x) => x !== id)].slice(0, 6));
     setPage("product");
     track("product_view", id);
-    { const prod = PRODUCTS.find((x) => x.id === id); if (prod) ttrack("ViewContent", prod, minPrice(prod)); }
+    { const prod = PRODUCTS.find((x) => x.id === id); if (prod) ttrack("ViewContent", [{ id: prod.id, name: prod.name }], minPrice(prod)); }
   };
   // One page_view per screen the visitor lands on; checkout_start when they
   // reach checkout, which is what makes the drop-off number meaningful.
@@ -7421,8 +7427,9 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
     track("page_view");
     if (page === "checkout") {
       track("checkout_start");
-      const cv = cart.reduce((sum, i) => { const pr = PRODUCTS.find((x) => x.id === i.id); const v = pr && (pr.variants.find((x) => x.id === i.variantId) || pr.variants[0]); return sum + (v ? v.price : 0) * i.qty; }, 0);
-      ttrack("InitiateCheckout", null, cv);
+      let cv = 0; const icItems = [];
+      cart.forEach((i) => { const pr = PRODUCTS.find((x) => x.id === i.id); if (!pr) return; const v = pr.variants.find((x) => x.id === i.variantId) || pr.variants[0]; cv += (v ? v.price : 0) * i.qty; icItems.push({ id: pr.id, name: pr.name, qty: i.qty }); });
+      ttrack("InitiateCheckout", icItems, cv);
     }
   }, [page]);
 
