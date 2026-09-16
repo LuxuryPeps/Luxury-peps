@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-26.1";
+const BACKEND_VERSION = "2026-07-27.1";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -181,13 +181,61 @@ function bytesToHex(bytes) { return Array.from(bytes).map((b) => b.toString(16).
 // Flips an order to paid exactly once. The conditional UPDATE is the lock:
 // whichever of {webhook, browser confirm} lands first changes a row and gets
 // `true`; the loser changes nothing and must not send duplicate emails.
-async function claimOrderAsPaid(db, reference, transId) {
+// SHA-256 hex of a normalized string (lowercased, trimmed) — TikTok requires
+// customer PII (email) to be hashed before sending.
+async function sha256hex(str) {
+  const data = TE.encode(String(str || "").trim().toLowerCase());
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Server-side Purchase to TikTok's Events API. Uses the order reference as
+// event_id so TikTok DEDUPLICATES it against the browser pixel's Purchase (same
+// event_id = same conversion, counted once). No-op unless TIKTOK_ACCESS_TOKEN is
+// set. Never throws — a marketing call must never affect an order being paid.
+async function sendTikTokPurchase(env, db, reference) {
+  const token = env.TIKTOK_ACCESS_TOKEN;
+  const pixel = env.TIKTOK_PIXEL_ID || "DAKVHNRC77U2FG646D20";
+  if (!token) return;
+  try {
+    const o = await db.first("select reference, email, total_cents from orders where reference=?", reference);
+    if (!o) return;
+    const items = await db.all("select product_id, sum(qty) as qty from order_items where order_ref=? group by product_id", reference);
+    const contents = items.filter((i) => i.product_id).map((i) => ({ content_id: String(i.product_id), content_type: "product", quantity: Number(i.qty) || 1 }));
+    const user = {};
+    if (o.email) user.email = await sha256hex(o.email);
+    const payload = {
+      event_source: "web",
+      event_source_id: pixel,
+      data: [{
+        event: "Purchase",
+        event_time: Math.floor(Date.now() / 1000),
+        event_id: String(o.reference),          // dedup key vs the browser pixel
+        user,
+        properties: {
+          currency: "USD",
+          value: Math.round((o.total_cents || 0)) / 100,
+          contents: contents.length ? contents : undefined,
+        },
+      }],
+    };
+    await fetch("https://business-api.tiktok.com/open_api/v1.3/event/track/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Access-Token": token },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) { /* never let analytics affect payment processing */ }
+}
+
+async function claimOrderAsPaid(db, reference, transId, env) {
   const r = await db.run("update orders set status='paid', paid_at=datetime('now'), anet_trans_id=coalesce(anet_trans_id, ?) where reference=? and status<>'paid' and status<>'shipped'", transId || null, reference);
   const changes = (r && r.meta && typeof r.meta.changes === "number") ? r.meta.changes : 1;
   if (changes > 0) {
     // Runs only for the winner of the claim, so stock can never be double-counted
     // by the webhook and the browser confirmation both firing.
     try { await decrementStock(db, reference); } catch (_) { /* never block a payment */ }
+    // Fire the server-side TikTok Purchase (deduped against the browser pixel).
+    try { if (env) await sendTikTokPurchase(env, db, reference); } catch (_) {}
   }
   return changes > 0;
 }
@@ -1119,7 +1167,7 @@ export async function onRequest(context) {
         return J({ error: "That transaction doesn't match this order." }, 409);
       }
 
-      const claimed = await claimOrderAsPaid(db, reference, transId);
+      const claimed = await claimOrderAsPaid(db, reference, transId, env);
       try { await db.run("insert into webhook_log (event_type, signature_ok, matched_order, note) values ('confirm', 1, ?, ?)", reference, ((claimed ? "confirmed via browser callback" : "already confirmed elsewhere") + ", status=" + status).slice(0, 200)); } catch (_) {}
       if (claimed) {
         if (context.waitUntil) context.waitUntil(sendCardOrderEmails(env, db, order));
@@ -1157,7 +1205,7 @@ export async function onRequest(context) {
         const order = await db.first("select * from orders where reference=?", inv);
         if (order) {
           matched = inv;
-          const claimed = await claimOrderAsPaid(db, inv, String((evt.payload && evt.payload.id) || ""));
+          const claimed = await claimOrderAsPaid(db, inv, String((evt.payload && evt.payload.id) || ""), env);
           if (claimed) {
             // Send the emails AFTER responding. Authorize.Net times the webhook out
             // and disables it if we take too long, and Resend can be slow.
