@@ -889,7 +889,7 @@ function track(event, productId) {
 
 // Fire a TikTok Pixel event (safe no-op if the pixel isn't loaded / is blocked).
 // Builds the standard { contents:[...], value, currency } shape from a product.
-function ttrack(event, items, value) {
+function ttrack(event, items, value, eventId) {
   if (typeof window === "undefined" || typeof window.ttq === "undefined") return;
   try {
     // items: array of { id, name, qty? }. Only send a contents array when we
@@ -900,7 +900,8 @@ function ttrack(event, items, value) {
     const payload = { currency: "USD" };
     if (typeof value === "number") payload.value = Number(value.toFixed(2));
     if (list.length) payload.contents = list;
-    window.ttq.track(event, payload);
+    // event_id lets TikTok dedupe this browser event against the server-side one.
+    window.ttq.track(event, payload, eventId ? { event_id: String(eventId) } : undefined);
   } catch (_) { /* never break the site over analytics */ }
 }
 const CHECKOUT_SESSION_ENDPOINT = API_BASE + "/api/create-checkout-session";
@@ -3391,7 +3392,7 @@ function Success({ setPage, clearCart }) {
     try {
       const amt = Number(order.total);
       const pItems = (order.items || []).map((it) => { const pr = PRODUCTS.find((x) => x.name === it.name); return pr ? { id: pr.id, name: pr.name, qty: it.qty } : null; }).filter(Boolean);
-      ttrack("Purchase", pItems, isFinite(amt) && amt > 0 ? amt : undefined);
+      ttrack("Purchase", pItems, isFinite(amt) && amt > 0 ? amt : undefined, order.reference);
     } catch (_) { /* never break the page */ }
   }, [order]);
 
