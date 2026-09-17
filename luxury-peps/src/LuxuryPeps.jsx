@@ -3784,7 +3784,7 @@ function AuthGate({ onAuthenticated }) {
         // Always keep the token (needed for order history / reorder). The
         // `remember` flag alone decides whether we auto-sign-in next visit.
         if (data.token) {
-          await window.storage.set("session", JSON.stringify({ email: data.email, token: data.token, remember: !!rememberMe }), false);
+          await window.storage.set("session", JSON.stringify({ email: data.email, token: data.token, remember: true }), false);
         }
         onAuthenticated(data.email || email.toLowerCase());
         setLoading(false);
@@ -3891,15 +3891,6 @@ function AuthGate({ onAuthenticated }) {
             />
           )}
 
-          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--muted)", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              style={{ width: "auto", accentColor: "#C9A05C" }}
-            />
-            Remember me on this device
-          </label>
 
           {error && (
             <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, color: "#D9A06B" }}>
@@ -7041,7 +7032,8 @@ function LuxuryPeps() {
         const session = await window.storage.get("session", false);
         if (session) {
           const data = JSON.parse(session.value);
-          if (data.remember !== false) setUserEmail(data.email);
+          // Always restore the session — users stay logged in across tab closes.
+          if (data.email) setUserEmail(data.email);
         }
       } catch (_) {
         // no active session
