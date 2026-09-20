@@ -1336,6 +1336,7 @@ function Footer({ setPage }) {
               <button className="lp-nav-link" onClick={() => setPage("terms")} style={{ textAlign: "left" }}>Terms of Service</button>
               <button className="lp-nav-link" onClick={() => setPage("privacy")} style={{ textAlign: "left" }}>Privacy Policy</button>
               <button className="lp-nav-link" onClick={() => setPage("shipping")} style={{ textAlign: "left" }}>Shipping &amp; Refunds</button>
+              <button className="lp-nav-link" onClick={() => { setSelectedProduct(null); setPage("coa"); }} style={{ textAlign: "left" }}>Certificates</button>
               <button className="lp-nav-link" onClick={() => setPage("guide")} style={{ textAlign: "left" }}>Research Guide</button>
               <button className="lp-nav-link" onClick={() => setPage("status")} style={{ textAlign: "left" }}>Track Order</button>
               <button className="lp-nav-link" onClick={() => setPage("review")} style={{ textAlign: "left" }}>Write a Review</button>
@@ -2369,7 +2370,40 @@ function BatchLookup({ setPage, openProduct }) {
 }
 
 
-function CertificateOfAnalysis({ productId, setPage }) {
+function CertificateOfAnalysis({ productId, setPage, openCoa }) {
+  // No product selected -> show the full gallery of every available certificate.
+  if (!productId) {
+    const withCoa = PRODUCTS.filter((x) => PRODUCT_COA[x.id]);
+    return (
+      <div className="lp-fade" style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 28px 100px" }}>
+        <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Documentation</div>
+        <h1 className="lp-serif" style={{ fontSize: 34, fontWeight: 400, marginBottom: 12 }}>Certificates of Analysis</h1>
+        <p style={{ color: "var(--muted)", fontSize: 15, lineHeight: 1.8, marginBottom: 8, maxWidth: 640 }}>
+          Every compound ships with a batch-specific certificate reporting its identity and HPLC purity.
+          Select a compound to view its certificate.
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginBottom: 36 }}>{withCoa.length} certificates available</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+          {withCoa.map((x) => (
+            <button key={x.id} onClick={() => (openCoa ? openCoa(x.id) : setPage("coa"))}
+              style={{ textAlign: "left", background: "var(--panel)", border: "1px solid var(--line)", padding: "18px 18px 16px", cursor: "pointer", transition: "border-color 0.2s ease" }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--gold)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <FileText size={16} color="var(--gold)" />
+                <span style={{ fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>No. {x.no}</span>
+              </div>
+              <div className="lp-serif" style={{ fontSize: 18, color: "var(--cream)", marginBottom: 4 }}>{x.name}</div>
+              <div style={{ fontSize: 12, color: "var(--gold)" }}>≥ {x.purity} HPLC</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 10, display: "flex", alignItems: "center", gap: 5 }}>
+                View certificate →
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
   const p = PRODUCTS.find((x) => x.id === productId) || PRODUCTS[0];
   const coa = COA_DATA[p.id] || {
     testDate: "2026-05-01",
@@ -7407,6 +7441,8 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
   const removeItem = (id, variantId) =>
     setCart((c) => c.filter((i) => !(i.id === id && i.variantId === variantId)));
   const clearCart = () => setCart([]);
+  const openCoa = (id) => { setSelectedProduct(id); setPage("coa"); };
+  const openAllCoas = () => { setSelectedProduct(null); setPage("coa"); };
   const openProduct = (id) => {
     setSelectedProduct(id);
     setRecentlyViewed((prev) => [id, ...prev.filter((x) => x !== id)].slice(0, 6));
@@ -7443,7 +7479,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       {page === "home" && <Home setPage={setPage} addToCart={addToCart} openProduct={openProduct} />}
       {page === "shop" && <Shop setPage={setPage} openProduct={openProduct} addToCart={addToCart} recentlyViewed={recentlyViewed} />}
       {page === "product" && <ProductDetail productId={selectedProduct} setPage={setPage} addToCart={addToCart} openProduct={openProduct} recentlyViewed={recentlyViewed} />}
-      {page === "coa" && <CertificateOfAnalysis productId={selectedProduct} setPage={setPage} />}
+      {page === "coa" && <CertificateOfAnalysis productId={selectedProduct} setPage={setPage} openCoa={openCoa} />}
       {page === "cart" && <Cart cart={cart} setPage={setPage} updateQty={updateQty} removeItem={removeItem} addToCart={addToCart} />}
       {page === "checkout" && <Checkout cart={cart} setPage={setPage} addToCart={addToCart} />}
       {page === "success" && <Success setPage={setPage} clearCart={clearCart} />}
