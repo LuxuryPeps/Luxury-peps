@@ -1350,8 +1350,8 @@ function Footer({ setPage }) {
             <div className="lp-eyebrow" style={{ marginBottom: 14 }}>Contact</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button className="lp-nav-link" onClick={() => setPage("contact")} style={{ textAlign: "left" }}>Contact Us</button>
-              <button className="lp-nav-link" onClick={() => setPage("ambassador")} style={{ textAlign: "left" }}>Ambassador Program</button>
-              <button className="lp-nav-link" onClick={() => setPage("portal")} style={{ textAlign: "left" }}>Ambassador Portal</button>
+              <button className="lp-nav-link" onClick={() => setPage("ambassador")} style={{ textAlign: "left" }}>Affiliate Program</button>
+              <button className="lp-nav-link" onClick={() => setPage("portal")} style={{ textAlign: "left" }}>Affiliate Portal</button>
               <button className="lp-nav-link" onClick={() => setPage("owner")} style={{ textAlign: "left", opacity: 0.6 }}>Owner</button>
               <button className="lp-nav-link" onClick={() => setPage("marketing")} style={{ textAlign: "left", opacity: 0.6 }}>Marketing</button>
               <p style={{ fontSize: 13, color: "var(--muted)" }}>{SITE_CONFIG.contactEmail}</p>
@@ -2756,7 +2756,7 @@ function Checkout({ cart, setPage, addToCart }) {
     })();
   }, []);
 
-  // One field, two kinds of code: ambassador codes give the creator a commission,
+  // One field, two kinds of code: affiliate codes give the creator a commission,
   // promo codes are store-run. Try ambassador first, then promo.
   const applyCode = async () => {
     const key = codeInput.trim().toUpperCase();
@@ -5212,7 +5212,7 @@ function OwnerPortal({ setPage }) {
     const pct = parseFloat(newAmb.pct);
     const discount = parseFloat(newAmb.discount);
     const portalPin = newAmb.pin.trim();
-    if (!creator) { setAmbError("Enter the ambassador's name."); return; }
+    if (!creator) { setAmbError("Enter the affiliate's name."); return; }
     if (!/^[A-Z0-9]{3,}$/.test(code)) { setAmbError("Code must be 3+ letters/numbers, no spaces."); return; }
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setAmbError("Commission must be between 0 and 100%."); return; }
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setAmbError("Customer discount must be between 0 and 100%."); return; }
@@ -5224,7 +5224,7 @@ function OwnerPortal({ setPage }) {
           body: JSON.stringify({ code, creator, pct: pct / 100, discountPct: discount / 100, portalPin }),
         });
         const d = await res.json().catch(() => ({}));
-        if (!res.ok) { setAmbError(d.error || "Couldn't add ambassador."); return; }
+        if (!res.ok) { setAmbError(d.error || "Couldn't add affiliate."); return; }
         setNewAmb({ creator: "", code: "", pct: "10", discount: "10", pin: "" }); setAmbError(""); refresh();
       } catch (_) { setAmbError("Couldn't reach the server. Try again."); }
       return;
@@ -5688,7 +5688,7 @@ function OwnerPortal({ setPage }) {
         <div style={card}>
           <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Commission Owed</div>
           <div className="lp-serif" style={{ fontSize: 26 }}>{money(view.commissionOwedCents)}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>to ambassadors</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>to affiliates</div>
         </div>
         <div style={card}>
           <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Incomplete Checkouts</div>
@@ -5706,7 +5706,7 @@ function OwnerPortal({ setPage }) {
         const alerts = [];
         if (view.pendingOrders > 0) alerts.push(view.pendingOrders + " incomplete checkout" + (view.pendingOrders === 1 ? "" : "s") + " (card form opened, never paid) confirmation");
         const owed = (view.commissionOwedCents || 0) - Object.values(view.paidOutByCode || {}).reduce((a, b) => a + b, 0);
-        if (owed > 0) alerts.push(money(owed) + " in commission owed to ambassadors");
+        if (owed > 0) alerts.push(money(owed) + " in commission owed to affiliates");
         if (trackedOut.length > 0) alerts.push(trackedOut.length + " product" + (trackedOut.length === 1 ? "" : "s") + " out of stock");
         if (trackedLow.length > 0) alerts.push(trackedLow.length + " product" + (trackedLow.length === 1 ? "" : "s") + " low on stock");
         if (alerts.length === 0) return null;
@@ -5955,7 +5955,7 @@ function OwnerPortal({ setPage }) {
             <DollarSign size={14} color="var(--gold-bright)" />
             <div className="lp-eyebrow">Promo codes</div>
           </div>
-          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Store-run discounts. Separate from ambassador codes — these pay no commission.</p>
+          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Store-run discounts. Separate from affiliate codes — these pay no commission.</p>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 10 }}>
             <input type="text" placeholder="CODE" value={promoForm.code} onChange={(e) => setPromoForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} style={{ fontSize: 12.5 }} />
@@ -5997,7 +5997,7 @@ function OwnerPortal({ setPage }) {
 
       {/* Ambassadors */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 10, flexWrap: "wrap" }}>
-        <div className="lp-eyebrow">Ambassadors</div>
+        <div className="lp-eyebrow">Affiliates</div>
         <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{ambassadors.length} active</div>
       </div>
       <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 14, fontSize: 13 }}>
@@ -6029,7 +6029,7 @@ function OwnerPortal({ setPage }) {
             </div>
             {editing && (
               <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", background: "var(--panel)", border: "1px solid var(--line)", padding: "12px 14px", margin: "0 0 14px" }}>
-                <div style={{ position: "relative" }} title="Commission you pay this ambassador">
+                <div style={{ position: "relative" }} title="Commission you pay this affiliate">
                   <label style={{ fontSize: 10.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Commission</label>
                   <input value={ambEdit.pct} onChange={(e) => setAmbEdit((s) => ({ ...s, pct: e.target.value }))} inputMode="decimal" style={{ ...ambInput, width: 120, paddingRight: 26 }} />
                   <span style={{ position: "absolute", right: 10, bottom: 10, color: "var(--muted)", fontSize: 13 }}>%</span>
@@ -6049,7 +6049,7 @@ function OwnerPortal({ setPage }) {
 
       {/* Add ambassador */}
       <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}><Plus size={14} color="var(--gold-bright)" /><div className="lp-eyebrow">Add Ambassador</div></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}><Plus size={14} color="var(--gold-bright)" /><div className="lp-eyebrow">Add Affiliate</div></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 12 }}>
           <input value={newAmb.creator} onChange={(e) => setNewAmb((n) => ({ ...n, creator: e.target.value }))} placeholder="Name" style={ambInput} />
           <input value={newAmb.code} onChange={(e) => setNewAmb((n) => ({ ...n, code: e.target.value.toUpperCase() }))} placeholder="CODE" style={{ ...ambInput, letterSpacing: "0.08em" }} />
@@ -6065,7 +6065,7 @@ function OwnerPortal({ setPage }) {
         </div>
         {ambError && <div style={{ color: "#e0a0a0", fontSize: 12, marginBottom: 10 }}>{ambError}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <button className="lp-btn lp-btn-solid" onClick={addAmbassador} style={{ fontSize: 12 }}>Add ambassador</button>
+          <button className="lp-btn lp-btn-solid" onClick={addAmbassador} style={{ fontSize: 12 }}>Add affiliate</button>
           <span style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>Customer gets {newAmb.discount || "10"}% off; you pay {newAmb.pct || "10"}% commission per order.</span>
         </div>
       </div>
@@ -6198,7 +6198,7 @@ function OwnerPortal({ setPage }) {
         </div>
         <div style={{ border: "1px solid var(--line)", padding: "16px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>Ambassador Applications</span>
+            <span style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>Affiliate Applications</span>
             <span style={{ fontSize: 11, color: "var(--gold-bright)" }}>{live ? inboxApps.length : "—"}</span>
           </div>
           {!live ? (
@@ -6273,7 +6273,7 @@ function AmbassadorPortal({ setPage }) {
   const lookup = async (codeArg, pinArg) => {
     const c = (typeof codeArg === "string" ? codeArg : code).trim().toUpperCase();
     const pn = (typeof pinArg === "string" ? pinArg : pin).trim();
-    if (!c) { setError("Enter your ambassador code."); return; }
+    if (!c) { setError("Enter your affiliate code."); return; }
     if (!pn) { setError("Enter your PIN."); return; }
     setError("");
     setLoading(true);
@@ -6322,17 +6322,17 @@ function AmbassadorPortal({ setPage }) {
   if (!data) {
     return (
       <div className="lp-fade" style={{ maxWidth: 460, margin: "0 auto", padding: "80px 28px 120px" }}>
-        <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Ambassadors</div>
-        <h1 className="lp-serif" style={{ fontSize: 34, marginBottom: 12 }}>Ambassador Portal</h1>
+        <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Affiliates</div>
+        <h1 className="lp-serif" style={{ fontSize: 34, marginBottom: 12 }}>Affiliate Portal</h1>
         <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.7, marginBottom: 28 }}>
-          Enter your ambassador code and PIN to see your orders, sales, and commission.
+          Enter your affiliate code and PIN to see your orders, sales, and commission.
         </p>
-        <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>Ambassador Code</label>
+        <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>Affiliate Code</label>
         <input
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onKeyDown={(e) => e.key === "Enter" && lookup()}
-          placeholder="Your ambassador code"
+          placeholder="Your affiliate code"
           style={{ width: "100%", padding: "12px 14px", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--cream)", fontSize: 15, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16, boxSizing: "border-box" }}
         />
         <label className="lp-eyebrow" style={{ display: "block", marginBottom: 8 }}>PIN</label>
@@ -6349,7 +6349,7 @@ function AmbassadorPortal({ setPage }) {
           {loading ? "Loading…" : "View My Commission"}
         </button>
         <p style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 20, lineHeight: 1.7 }}>
-          Not an ambassador yet? <button onClick={() => setPage("ambassador")} style={{ background: "none", border: "none", color: "var(--gold-bright)", cursor: "pointer", padding: 0, textDecoration: "underline", fontSize: 11.5 }}>Apply here.</button>
+          Not an affiliate yet? <button onClick={() => setPage("ambassador")} style={{ background: "none", border: "none", color: "var(--gold-bright)", cursor: "pointer", padding: 0, textDecoration: "underline", fontSize: 11.5 }}>Apply here.</button>
         </p>
       </div>
     );
@@ -6368,7 +6368,7 @@ function AmbassadorPortal({ setPage }) {
     <div className="lp-fade" style={{ maxWidth: 760, margin: "0 auto", padding: "60px 28px 120px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Ambassador Portal</div>
+          <div className="lp-eyebrow" style={{ marginBottom: 8 }}>Affiliate Portal</div>
           <h1 className="lp-serif" style={{ fontSize: 32 }}>Welcome, {data.creator}</h1>
         </div>
         <button className="lp-btn" onClick={signOut} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}><LogOut size={13} /> Sign out</button>
@@ -6544,9 +6544,9 @@ function AmbassadorPage({ setPage }) {
       return;
     }
     const body = encodeURIComponent(
-      `Ambassador application\n\nName: ${form.name}\nEmail: ${form.email}\nPlatform: ${form.platform}\nHandle: ${form.handle}\nAudience size: ${form.followers}\nNiche: ${form.niche}\n\nWhy they're a fit:\n${form.why}`
+      `Affiliate application\n\nName: ${form.name}\nEmail: ${form.email}\nPlatform: ${form.platform}\nHandle: ${form.handle}\nAudience size: ${form.followers}\nNiche: ${form.niche}\n\nWhy they're a fit:\n${form.why}`
     );
-    window.location.href = `mailto:${SITE_CONFIG.socialEmail}?subject=${encodeURIComponent("[Ambassador] " + form.name)}&body=${body}`;
+    window.location.href = `mailto:${SITE_CONFIG.socialEmail}?subject=${encodeURIComponent("[Affiliate] " + form.name)}&body=${body}`;
     setSent(true);
   };
 
@@ -6562,7 +6562,7 @@ function AmbassadorPage({ setPage }) {
         <ChevronLeft size={14} /> Home
       </button>
       <div className="lp-eyebrow" style={{ marginBottom: 10 }}>Partnerships</div>
-      <h1 className="lp-serif" style={{ fontSize: 36, fontWeight: 400, marginBottom: 14 }}>Become a Luxury Peps Ambassador</h1>
+      <h1 className="lp-serif" style={{ fontSize: 36, fontWeight: 400, marginBottom: 14 }}>Become a Luxury Peps Affiliate</h1>
       <p style={{ color: "var(--muted)", fontSize: 14.5, lineHeight: 1.8, marginBottom: 36 }}>
         Partner with Luxury Peps and earn on every order you send our way. Apply below — we review every
         application and reach out with your personal code if it's a fit.
@@ -7488,7 +7488,7 @@ function LuxuryPepsStore({ userEmail, onLogout }) {
       cart: "Cart", checkout: "Checkout", success: "Order Confirmed", orders: "My Orders", about: "Standards",
       calculator: "Concentration Calculator", coa: "Certificate of Analysis",
       terms: "Terms of Service", privacy: "Privacy Policy", shipping: "Shipping & Refunds",
-      faq: "FAQ", contact: "Contact", ambassador: "Ambassador Program", portal: "Ambassador Portal", owner: "Owner", batch: "Batch Lookup", compare: "Compare",
+      faq: "FAQ", contact: "Contact", ambassador: "Affiliate Program", portal: "Affiliate Portal", owner: "Owner", batch: "Batch Lookup", compare: "Compare",
     };
     const suffix = titles[page] || "";
     if (typeof document !== "undefined") {
