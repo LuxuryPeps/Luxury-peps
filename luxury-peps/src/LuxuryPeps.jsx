@@ -3785,6 +3785,7 @@ function AuthGate({ onAuthenticated }) {
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [emailOptIn, setEmailOptIn] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -3807,7 +3808,7 @@ function AuthGate({ onAuthenticated }) {
         const res = await fetch(API_BASE + path, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.toLowerCase(), password }),
+          body: JSON.stringify({ email: email.toLowerCase(), password, subscribe: mode === "signup" ? emailOptIn : false, consentText: "Opted in to product news & offers during account signup." }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -3923,6 +3924,13 @@ function AuthGate({ onAuthenticated }) {
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
             />
+          )}
+
+          {mode === "signup" && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12.5, color: "var(--muted)", cursor: "pointer", lineHeight: 1.5 }}>
+              <input type="checkbox" checked={emailOptIn} onChange={(e) => setEmailOptIn(e.target.checked)} style={{ width: "auto", accentColor: "#C9A05C", marginTop: 2 }} />
+              Email me product news, restocks, and offers. You can unsubscribe anytime.
+            </label>
           )}
 
 
@@ -4711,20 +4719,38 @@ function MarketingPortal({ setPage }) {
     loadAll(pin);
   };
 
+  // ---- affiliate rate edit (commission + customer discount) ----
+  const COMM_OPTS = ["0.10", "0.15", "0.20", "0.25", "0.30", "0.35", "0.40"];
+  const DISC_OPTS = ["0.00", "0.05", "0.10", "0.15", "0.20", "0.25", "0.30"];
+  const withCurrent = (opts, cur) => (cur && !opts.includes(cur) ? [cur, ...opts] : opts);
+  const [affEdit, setAffEdit] = useState({ pct: "0.10", discountPct: "0.10" });
+  const saveAffRates = async (code) => {
+    setMsg("");
+    const r = await mFetch("/api/marketing/affiliate-rates", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, pct: Number(affEdit.pct), discountPct: Number(affEdit.discountPct) }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(d.error || "Couldn't update rates."); return; }
+    setMsg(`${code} updated — ${Math.round(Number(affEdit.pct) * 100)}% commission, ${Math.round(Number(affEdit.discountPct) * 100)}% off.`);
+    loadAll(pin);
+  };
+
   // ---- affiliate create form ----
   const [nCode, setNCode] = useState("");
   const [nName, setNName] = useState("");
   const [nPct, setNPct] = useState("0.10");
+  const [nOff, setNOff] = useState("0.10");
   const [nPin, setNPin] = useState("");
   const createAffiliate = async () => {
     setMsg("");
     const r = await mFetch("/api/marketing/affiliates", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: nCode, creator: nName, pct: Number(nPct), portalPin: nPin }),
+      body: JSON.stringify({ code: nCode, creator: nName, pct: Number(nPct), discountPct: Number(nOff), portalPin: nPin }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { setMsg(d.error || "Couldn't create affiliate."); return; }
-    setNCode(""); setNName(""); setNPin(""); setNPct("0.10"); setMsg("Affiliate created.");
+    setNCode(""); setNName(""); setNPin(""); setNPct("0.10"); setNOff("0.10"); setMsg("Affiliate created.");
     loadAll(pin);
   };
   const resetAffPin = async (code) => {
@@ -4889,7 +4915,7 @@ function MarketingPortal({ setPage }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                {["Code", "Name", "Rate", "PIN", "Orders", "Sales", "Owed"].map((h) => (
+                {["Code", "Name", "Comm.", "Off", "PIN", "Orders", "Sales", "Owed"].map((h) => (
                   <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--muted)", fontWeight: 400, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
                 <th />
@@ -4904,18 +4930,19 @@ function MarketingPortal({ setPage }) {
                   </td>
                   <td style={{ padding: "10px 12px" }}>{a.creator}</td>
                   <td style={{ padding: "10px 12px" }}>{Math.round(a.pct * 100)}%</td>
+                  <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{Math.round((typeof a.discountPct === "number" ? a.discountPct : 0.10) * 100)}%</td>
                   <td style={{ padding: "10px 12px", fontVariantNumeric: "tabular-nums", userSelect: "all" }}>{a.portalPin || "—"}</td>
                   <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{a.orders}</td>
                   <td style={{ padding: "10px 12px" }}>{money(a.revenueCents)}</td>
                   <td style={{ padding: "10px 12px", color: "var(--gold-bright)" }}>{money(a.owedCents)}</td>
                   <td style={{ padding: "10px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button onClick={() => setOpenAff(openAff === a.code ? null : a.code)} title="Details" style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontSize: 11, padding: "5px 9px", cursor: "pointer", marginRight: 4 }}>{openAff === a.code ? "Hide" : "Details"}</button>
+                    <button onClick={() => { const opening = openAff !== a.code; setOpenAff(opening ? a.code : null); if (opening) setAffEdit({ pct: Number(a.pct).toFixed(2), discountPct: (typeof a.discountPct === "number" ? Number(a.discountPct) : 0.10).toFixed(2) }); }} title="Details" style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontSize: 11, padding: "5px 9px", cursor: "pointer", marginRight: 4 }}>{openAff === a.code ? "Hide" : "Edit rates"}</button>
                     <button onClick={() => resetAffPin(a.code)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontSize: 11, padding: "5px 9px", cursor: "pointer" }}>Set PIN</button>
                   </td>
                 </tr>
                 {openAff === a.code && (
                   <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                    <td colSpan={8} style={{ padding: "0 12px 16px" }}>
+                    <td colSpan={9} style={{ padding: "0 12px 16px" }}>
                       <div style={{ background: "var(--panel)", border: "1px solid var(--line)", padding: "14px 16px" }}>
                         <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14, fontSize: 12.5 }}>
                           <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Paid orders</div><div style={{ color: "var(--cream)", fontSize: 16 }}>{a.orders}</div></div>
@@ -4923,6 +4950,23 @@ function MarketingPortal({ setPage }) {
                           <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Commission owed</div><div style={{ color: "var(--gold-bright)", fontSize: 16 }}>{money(a.owedCents)}</div></div>
                           <div><div style={{ color: "var(--muted)", fontSize: 11 }}>Commission rate</div><div style={{ color: "var(--cream)", fontSize: 16 }}>{Math.round(a.pct * 100)}%</div></div>
                         </div>
+                        {!a.builtin && (
+                          <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
+                            <div>
+                              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 5 }}>Commission</label>
+                              <select value={affEdit.pct} onChange={(e) => setAffEdit((s) => ({ ...s, pct: e.target.value }))} style={{ fontSize: 13.5, padding: "8px 10px" }}>
+                                {withCurrent(COMM_OPTS, affEdit.pct).map((v) => <option key={v} value={v}>{Math.round(Number(v) * 100)}%</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 5 }}>Customer discount</label>
+                              <select value={affEdit.discountPct} onChange={(e) => setAffEdit((s) => ({ ...s, discountPct: e.target.value }))} style={{ fontSize: 13.5, padding: "8px 10px" }}>
+                                {withCurrent(DISC_OPTS, affEdit.discountPct).map((v) => <option key={v} value={v}>{Math.round(Number(v) * 100)}%</option>)}
+                              </select>
+                            </div>
+                            <button className="lp-btn lp-btn-solid" onClick={() => saveAffRates(a.code)} style={{ fontSize: 12.5, padding: "9px 16px" }}>Save rates</button>
+                          </div>
+                        )}
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Share link:</span>
                           <code style={{ fontSize: 11.5, color: "var(--gold)", background: "var(--bg)", padding: "4px 8px", border: "1px solid var(--line)", wordBreak: "break-all" }}>{affiliateLink(a.code)}</code>
@@ -4933,7 +4977,7 @@ function MarketingPortal({ setPage }) {
                           )}
                         </div>
                         <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
-                          The share link applies this code automatically at checkout — the customer gets 10% off without typing anything.
+                          The share link applies this code automatically at checkout — the customer gets {Math.round((typeof a.discountPct === "number" ? a.discountPct : 0.10) * 100)}% off without typing anything.
                         </p>
                       </div>
                     </td>
@@ -4941,7 +4985,7 @@ function MarketingPortal({ setPage }) {
                 )}
                 </React.Fragment>
               ))}
-              {affs.length === 0 && <tr><td colSpan={8} style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 12.5 }}>No affiliates yet.</td></tr>}
+              {affs.length === 0 && <tr><td colSpan={9} style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 12.5 }}>No affiliates yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -4960,8 +5004,13 @@ function MarketingPortal({ setPage }) {
             <div>
               <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Commission</label>
               <select value={nPct} onChange={(e) => setNPct(e.target.value)} style={{ width: "100%", fontSize: 13.5, padding: "9px 12px" }}>
-                <option value="0.10">10%</option>
-                <option value="0.15">15%</option>
+                {COMM_OPTS.map((v) => <option key={v} value={v}>{Math.round(Number(v) * 100)}%</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Customer discount</label>
+              <select value={nOff} onChange={(e) => setNOff(e.target.value)} style={{ width: "100%", fontSize: 13.5, padding: "9px 12px" }}>
+                {DISC_OPTS.map((v) => <option key={v} value={v}>{Math.round(Number(v) * 100)}%</option>)}
               </select>
             </div>
             <div>
@@ -5194,6 +5243,28 @@ function OwnerPortal({ setPage }) {
       return;
     }
     setCustomAmb((prev) => prev.filter((a) => String(a.code).toUpperCase() !== String(code).toUpperCase()));
+  };
+
+  // Owner: edit an existing ambassador's commission and customer discount.
+  const [ambEdit, setAmbEdit] = useState({ code: "", pct: "", discount: "" });
+  const saveAmbRates = async (code) => {
+    const pct = parseFloat(ambEdit.pct);
+    const discount = parseFloat(ambEdit.discount);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setAmbError("Commission must be between 0 and 100%."); return; }
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setAmbError("Customer discount must be between 0 and 100%."); return; }
+    setAmbError("");
+    if (live) {
+      try {
+        const res = await ownerFetch("/api/owner/ambassador-rates", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, pct: pct / 100, discountPct: discount / 100 }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) { setAmbError(d.error || "Couldn't update rates."); return; }
+      } catch (_) { setAmbError("Couldn't reach the server. Try again."); return; }
+    }
+    setAmbEdit({ code: "", pct: "", discount: "" });
+    refresh();
   };
 
   // Browser mode: load orders saved on this device so they show in the portal.
@@ -5553,10 +5624,10 @@ function OwnerPortal({ setPage }) {
   const trackedLow = PRODUCTS.filter((p) => inventory[p.id] != null && inventory[p.id] > 0 && inventory[p.id] <= invThreshold);
   const trackedOut = PRODUCTS.filter((p) => inventory[p.id] === 0);
   const ambassadors = live
-    ? ((view.codes) || []).map((c) => ({ code: c.code, creator: c.creator, pct: c.pct, builtin: !!c.builtin }))
+    ? ((view.codes) || []).map((c) => ({ code: c.code, creator: c.creator, pct: c.pct, discountPct: c.discountPct, builtin: !!c.builtin }))
     : [
-        ...Object.entries(CREATOR_CODES).map(([code, info]) => ({ code, creator: info.creator, pct: info.pct, builtin: true })),
-        ...customAmb.map((a) => ({ code: String(a.code).toUpperCase(), creator: a.creator, pct: a.pct, builtin: false })),
+        ...Object.entries(CREATOR_CODES).map(([code, info]) => ({ code, creator: info.creator, pct: info.pct, discountPct: 0.10, builtin: true })),
+        ...customAmb.map((a) => ({ code: String(a.code).toUpperCase(), creator: a.creator, pct: a.pct, discountPct: (typeof a.discount === "number" ? a.discount : 0.10), builtin: false })),
       ];
 
   const card = { border: "1px solid var(--line)", padding: "16px", background: "linear-gradient(160deg, rgba(255,255,255,0.02), transparent 70%)" };
@@ -5932,13 +6003,16 @@ function OwnerPortal({ setPage }) {
       <div style={{ border: "1px solid var(--line)", padding: "18px 20px", marginBottom: 14, fontSize: 13 }}>
         {ambassadors.map((c, idx) => {
           const row = (view.byCreator || []).find((b) => (b.creator_code || "").toUpperCase() === c.code);
+          const editing = ambEdit.code === c.code;
+          const custOff = Math.round((typeof c.discountPct === "number" ? c.discountPct : 0.10) * 100);
           return (
-            <div key={c.code} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderTop: idx === 0 ? "none" : "1px solid var(--line)", gap: 12, flexWrap: "wrap" }}>
+            <div key={c.code} style={{ borderTop: idx === 0 ? "none" : "1px solid var(--line)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", gap: 12, flexWrap: "wrap" }}>
               <div style={{ minWidth: 150 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ color: "var(--cream)" }}>{c.creator}</span>
                   <span style={{ color: "var(--gold-bright)", letterSpacing: "0.06em", fontSize: 12 }}>{c.code}</span>
-                  <span style={{ fontSize: 10.5, color: "var(--muted)" }}>{Math.round(c.pct * 100)}%</span>
+                  <span style={{ fontSize: 10.5, color: "var(--muted)" }}>{Math.round(c.pct * 100)}% comm · {custOff}% off</span>
                   {!c.builtin && <span style={{ fontSize: 9.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--gold-bright)", border: "1px solid var(--line)", padding: "1px 6px" }}>Added</span>}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
@@ -5948,9 +6022,26 @@ function OwnerPortal({ setPage }) {
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <CopyChip text={c.code} label="Code" copiedLabel="Copied" />
                 <CopyChip text={"https://luxurypeps.com/?ref=" + c.code} label="Link" copiedLabel="Copied" />
+                <button className="lp-btn" onClick={() => setAmbEdit(editing ? { code: "", pct: "", discount: "" } : { code: c.code, pct: String(Math.round(c.pct * 100)), discount: String(custOff) })} style={{ fontSize: 11, padding: "6px 10px" }}>{editing ? "Close" : "Edit"}</button>
                 {live && <button className="lp-btn" onClick={() => recordPayout(c.code)} style={{ fontSize: 11, padding: "6px 10px" }}>Pay</button>}
                 {!c.builtin && <button className="lp-btn" onClick={() => removeAmbassador(c.code)} aria-label={"Remove " + c.code} style={{ fontSize: 11, padding: "6px 9px", borderColor: "#7a4a4a", color: "#e0a0a0" }}><X size={12} /></button>}
               </div>
+            </div>
+            {editing && (
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", background: "var(--panel)", border: "1px solid var(--line)", padding: "12px 14px", margin: "0 0 14px" }}>
+                <div style={{ position: "relative" }} title="Commission you pay this ambassador">
+                  <label style={{ fontSize: 10.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Commission</label>
+                  <input value={ambEdit.pct} onChange={(e) => setAmbEdit((s) => ({ ...s, pct: e.target.value }))} inputMode="decimal" style={{ ...ambInput, width: 120, paddingRight: 26 }} />
+                  <span style={{ position: "absolute", right: 10, bottom: 10, color: "var(--muted)", fontSize: 13 }}>%</span>
+                </div>
+                <div style={{ position: "relative" }} title="Discount the customer gets for using this code">
+                  <label style={{ fontSize: 10.5, color: "var(--muted)", display: "block", marginBottom: 4 }}>Customer off</label>
+                  <input value={ambEdit.discount} onChange={(e) => setAmbEdit((s) => ({ ...s, discount: e.target.value }))} inputMode="decimal" style={{ ...ambInput, width: 120, paddingRight: 26 }} />
+                  <span style={{ position: "absolute", right: 10, bottom: 10, color: "var(--muted)", fontSize: 13 }}>%</span>
+                </div>
+                <button className="lp-btn lp-btn-solid" onClick={() => saveAmbRates(c.code)} style={{ fontSize: 12, padding: "10px 18px" }}>Save</button>
+              </div>
+            )}
             </div>
           );
         })}
