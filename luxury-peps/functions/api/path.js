@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-09-23.1";
+const BACKEND_VERSION = "2026-09-23.2";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -256,7 +256,7 @@ async function sendCardOrderEmails(env, db, order) {
   const custName = cust.name || order.email || "Customer";
   const rowsHtml = items.map((l) => `<tr><td style="padding:4px 10px 4px 0">${esc(l.name)}</td><td style="padding:4px 10px;color:#888">×${l.qty}</td><td style="padding:4px 0;text-align:right">$${((l.line_cents || 0) / 100).toFixed(2)}</td></tr>`).join("");
   const table = `<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${rowsHtml}<tr><td colspan="2" style="padding-top:8px;font-weight:bold">Total</td><td style="padding-top:8px;text-align:right;font-weight:bold">${totalStr}</td></tr></table>`;
-  await sendEmail(env, { to: ownerEmail(env), subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
+  await sendEmail(env, { to: ownerEmail(env), subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Affiliate: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
   if (order.email) await sendEmail(env, { to: order.email, subject: `Your Luxury Peps order ${order.reference}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">Thank you for your order</h2><p>Your payment was received. Order <b>${order.reference}</b> — total <b>${totalStr}</b>.</p>${table}<p>Your order ships shortly. We'll be in touch with tracking.</p></div>` }, db);
 }
 
@@ -665,7 +665,7 @@ export async function onRequest(context) {
       if (kind === "pct" && (value < 1 || value > 50)) return J({ error: "Percent must be between 1 and 50." }, 400);
       if (kind === "amount" && value < 1) return J({ error: "Enter an amount in cents." }, 400);
       if (kind === "freeship") value = 0;
-      if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an ambassador code." }, 409);
+      if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an affiliate code." }, 409);
       const maxUses = body.maxUses ? Math.max(1, Math.floor(Number(body.maxUses))) : null;
       const expires = body.expiresAt ? String(body.expiresAt).slice(0, 10) : null;
       await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, ?, ?, 1, ?, ?) on conflict(code) do update set kind=excluded.kind, value=excluded.value, expires_at=excluded.expires_at, max_uses=excluded.max_uses, active=1", code, kind, value, expires, maxUses);
@@ -1000,7 +1000,7 @@ export async function onRequest(context) {
       const code = upper(decodeURIComponent(path.split("/").pop()));
       const row = await db.first("select builtin from ambassadors where code=?", code);
       if (!row) return J({ error: "not found" }, 404);
-      if (row.builtin) return J({ error: "Built-in ambassadors can't be removed." }, 400);
+      if (row.builtin) return J({ error: "Built-in affiliates can't be removed." }, 400);
       await db.run("delete from ambassadors where code=?", code);
       return J({ ok: true });
     }
@@ -1288,7 +1288,7 @@ export async function onRequest(context) {
       await sendEmail(env, {
         to: OWNER_EMAIL,
         subject: `New order ${reference} — ${totalStr}`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New order ${reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(body.email || "no email")}&gt;</p><p style="margin:0 0 4px"><b>Payment:</b> ${esc(methodLabel)}${code ? ` &nbsp; <b>Ambassador:</b> ${esc(code)}` : ""}</p>${table}<p style="color:#555">Send this customer their payment instructions to complete the order.</p></div>`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New order ${reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(body.email || "no email")}&gt;</p><p style="margin:0 0 4px"><b>Payment:</b> ${esc(methodLabel)}${code ? ` &nbsp; <b>Affiliate:</b> ${esc(code)}` : ""}</p>${table}<p style="color:#555">Send this customer their payment instructions to complete the order.</p></div>`,
       });
       if (body.email) {
         const pay = PAY[body.method];
@@ -1345,7 +1345,7 @@ export async function onRequest(context) {
     }
     if (path === "/api/ambassador" && method === "POST") {
       await db.run("insert into ambassador_applications (name, email, platform, handle, followers, niche, why) values (?, ?, ?, ?, ?, ?, ?)", body.name || null, body.email || null, body.platform || null, body.handle || null, body.followers || null, body.niche || null, body.why || null);
-      await sendEmail(env, { to: OWNER_EMAIL, subject: `New ambassador application: ${body.name || ""}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><p><b>${esc(body.name)}</b> &lt;${esc(body.email)}&gt;</p><p><b>Platform:</b> ${esc(body.platform)} — ${esc(body.handle)} (${esc(body.followers)} followers)</p><p><b>Niche:</b> ${esc(body.niche)}</p><p style="white-space:pre-wrap">${esc(body.why)}</p></div>` });
+      await sendEmail(env, { to: OWNER_EMAIL, subject: `New affiliate application: ${body.name || ""}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><p><b>${esc(body.name)}</b> &lt;${esc(body.email)}&gt;</p><p><b>Platform:</b> ${esc(body.platform)} — ${esc(body.handle)} (${esc(body.followers)} followers)</p><p><b>Niche:</b> ${esc(body.niche)}</p><p style="white-space:pre-wrap">${esc(body.why)}</p></div>` });
       return J({ ok: true });
     }
 
