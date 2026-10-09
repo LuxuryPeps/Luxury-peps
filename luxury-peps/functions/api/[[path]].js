@@ -13,14 +13,14 @@
 // ===========================================================================
 
 // ── Catalog (variant id → price). Keep in sync with the storefront. ─────────
-const VARIANTS = {"p03-A":{"name":"GLP-1 SM","cents":8999},"p04-A":{"name":"GLP-2 TZ","cents":6499},"p04-B":{"name":"GLP-2 TZ","cents":9499},"p21-A":{"name":"GLP-3 RT","cents":7999},"p21-B":{"name":"GLP-3 RT","cents":12999},"p01-A":{"name":"BPC-157","cents":4499},"p02-A":{"name":"TB-500","cents":5499},"p29-A":{"name":"BPC-157 + TB-500","cents":11999},"p34-A":{"name":"BPC-157 + GHK-Cu + TB-500 (GLOW)","cents":10999},"p35-A":{"name":"BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)","cents":13999},"p08-A":{"name":"GHK-Cu","cents":6499},"p07-A":{"name":"Melanotan II","cents":4499},"p28-A":{"name":"Glutathione","cents":7199},"p05-A":{"name":"Ipamorelin","cents":3999},"p05-B":{"name":"Ipamorelin","cents":5999},"p06-A":{"name":"CJC-1295 (No DAC)","cents":6599},"p33-A":{"name":"CJC-1295 + Ipamorelin","cents":8199},"p15-A":{"name":"Sermorelin","cents":5999},"p31-A":{"name":"Tesamorelin","cents":5499},"p31-B":{"name":"Tesamorelin","cents":7499},"p32-A":{"name":"IGF-1 LR3","cents":8499},"p09-A":{"name":"Epithalon","cents":6099},"p19-A":{"name":"MOTS-c","cents":4899},"p24-A":{"name":"SS-31","cents":7999},"p22-A":{"name":"NAD+","cents":5999},"p25-A":{"name":"VIP","cents":6999},"p11-A":{"name":"Selank","cents":3899},"p12-A":{"name":"Semax","cents":3999},"p23-A":{"name":"Oxytocin Acetate","cents":5399},"p26-A":{"name":"5-Amino-1MQ","cents":6999},"p30-A":{"name":"HCG","cents":9499},"p27-A":{"name":"Bacteriostatic Water","cents":1499}};
+const VARIANTS = {"p03-A":{"name":"GLP-1 SM","cents":7999},"p04-A":{"name":"GLP-2 TZ","cents":6499},"p04-B":{"name":"GLP-2 TZ","cents":9499},"p21-A":{"name":"GLP-3 RT","cents":7999},"p21-B":{"name":"GLP-3 RT","cents":12999},"p01-A":{"name":"BPC-157","cents":4499},"p02-A":{"name":"TB-500","cents":5499},"p29-A":{"name":"BPC-157 + TB-500","cents":9899},"p34-A":{"name":"BPC-157 + GHK-Cu + TB-500 (GLOW)","cents":10999},"p35-A":{"name":"BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)","cents":13999},"p08-A":{"name":"GHK-Cu","cents":6499},"p07-A":{"name":"Melanotan II","cents":4499},"p28-A":{"name":"Glutathione","cents":7199},"p05-A":{"name":"Ipamorelin","cents":3999},"p05-B":{"name":"Ipamorelin","cents":5999},"p06-A":{"name":"CJC-1295 (No DAC)","cents":6599},"p33-A":{"name":"CJC-1295 + Ipamorelin","cents":8199},"p15-A":{"name":"Sermorelin","cents":5999},"p31-A":{"name":"Tesamorelin","cents":5499},"p31-B":{"name":"Tesamorelin","cents":7499},"p32-A":{"name":"IGF-1 LR3","cents":8499},"p09-A":{"name":"Epithalon","cents":6099},"p19-A":{"name":"MOTS-c","cents":4899},"p24-A":{"name":"SS-31","cents":7999},"p22-A":{"name":"NAD+","cents":5999},"p25-A":{"name":"VIP","cents":6999},"p11-A":{"name":"Selank","cents":3899},"p12-A":{"name":"Semax","cents":3999},"p23-A":{"name":"Oxytocin Acetate","cents":5399},"p26-A":{"name":"5-Amino-1MQ","cents":6999},"p30-A":{"name":"HCG","cents":9499},"p27-A":{"name":"Bacteriostatic Water","cents":1499}};
 
 const QTY_BREAKS = [{ min: 5, pct: 0.15 }, { min: 3, pct: 0.10 }, { min: 2, pct: 0.05 }];
 const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) return b.pct; return 0; };
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-07-27.1";
+const BACKEND_VERSION = "2026-10-09.3";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -256,7 +256,7 @@ async function sendCardOrderEmails(env, db, order) {
   const custName = cust.name || order.email || "Customer";
   const rowsHtml = items.map((l) => `<tr><td style="padding:4px 10px 4px 0">${esc(l.name)}</td><td style="padding:4px 10px;color:#888">×${l.qty}</td><td style="padding:4px 0;text-align:right">$${((l.line_cents || 0) / 100).toFixed(2)}</td></tr>`).join("");
   const table = `<table style="border-collapse:collapse;font-size:14px;margin:10px 0">${rowsHtml}<tr><td colspan="2" style="padding-top:8px;font-weight:bold">Total</td><td style="padding-top:8px;text-align:right;font-weight:bold">${totalStr}</td></tr></table>`;
-  await sendEmail(env, { to: ownerEmail(env), subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Ambassador: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
+  await sendEmail(env, { to: ownerEmail(env), subject: `New PAID card order ${order.reference} — ${totalStr}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New paid order ${order.reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(order.email || "")}&gt;</p><p style="margin:0 0 4px"><b>Paid by card.</b>${order.code ? ` Affiliate: ${esc(order.code)}` : ""}</p>${table}<p style="color:#555">Ship to: ${esc(cust.address || "")}, ${esc(cust.city || "")}${cust.state ? ", " + esc(cust.state) : ""} ${esc(cust.zip || "")}, ${esc(cust.country || "")}</p></div>` }, db);
   if (order.email) await sendEmail(env, { to: order.email, subject: `Your Luxury Peps order ${order.reference}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">Thank you for your order</h2><p>Your payment was received. Order <b>${order.reference}</b> — total <b>${totalStr}</b>.</p>${table}<p>Your order ships shortly. We'll be in touch with tracking.</p></div>` }, db);
 }
 
@@ -336,6 +336,7 @@ async function ensureSchema(db) {
   // what they consented to and when.
   await t("create table if not exists subscribers (id integer primary key autoincrement, phone text, email text, consent_text text, source text, ip_hash text, created_at text not null default (datetime('now')), unsubscribed_at text)");
   await t("create unique index if not exists subscribers_phone on subscribers (phone)");
+  await t("create unique index if not exists subscribers_email on subscribers (email)");
 }
 
 // ── Router ─────────────────────────────────────────────────────────────────
@@ -376,9 +377,11 @@ export async function onRequest(context) {
     const supplied = String(pin || "").trim() || String(marketingHeaderPin || "").trim();
     return supplied === MARKETING_PIN;
   };
-  // Commission is limited to these two rates, enforced HERE rather than trusting
-  // the dropdown — the request can be edited, this can't.
-  const ALLOWED_COMMISSION = new Set([0.10, 0.15]);
+  // Affiliate rates the MARKETING contractor may set are capped HERE rather than
+  // trusting the dropdown — the request can be edited, this can't. Commission 5–40%,
+  // customer discount 0–30%, both snapped to 5% steps. (The owner portal is uncapped.)
+  const snap5 = (frac, lo, hi) => { let p = Math.round((Number(frac) || 0) * 20) / 20; if (p < lo) p = lo; if (p > hi) p = hi; return p; };
+  const MK_COMM_LO = 0.05, MK_COMM_HI = 0.40, MK_DISC_LO = 0.00, MK_DISC_HI = 0.30;
 
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "");
@@ -654,7 +657,7 @@ export async function onRequest(context) {
     if (path === "/api/owner/promos" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
       const code = upper(String(body.code || "").trim());
-      if (!/^[A-Z0-9]{3,20}$/.test(code)) return J({ error: "Code must be 3–20 letters or numbers." }, 400);
+      if (!/^[A-Z0-9]{2,20}$/.test(code)) return J({ error: "Code must be 2–20 letters or numbers." }, 400);
       const kind = ["pct", "amount", "freeship"].includes(body.kind) ? body.kind : "pct";
       let value = Math.max(0, Math.floor(Number(body.value) || 0));
       // Owner percentage promos are capped at 10%. (Fixed-amount and free-shipping
@@ -662,7 +665,7 @@ export async function onRequest(context) {
       if (kind === "pct" && (value < 1 || value > 50)) return J({ error: "Percent must be between 1 and 50." }, 400);
       if (kind === "amount" && value < 1) return J({ error: "Enter an amount in cents." }, 400);
       if (kind === "freeship") value = 0;
-      if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an ambassador code." }, 409);
+      if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code is already an affiliate code." }, 409);
       const maxUses = body.maxUses ? Math.max(1, Math.floor(Number(body.maxUses))) : null;
       const expires = body.expiresAt ? String(body.expiresAt).slice(0, 10) : null;
       await db.run("insert into promos (code, kind, value, active, expires_at, max_uses) values (?, ?, ?, 1, ?, ?) on conflict(code) do update set kind=excluded.kind, value=excluded.value, expires_at=excluded.expires_at, max_uses=excluded.max_uses, active=1", code, kind, value, expires, maxUses);
@@ -868,14 +871,14 @@ export async function onRequest(context) {
     // each code's sales and what's owed. No payout actions live here.
     if (path === "/api/marketing/affiliates" && method === "GET") {
       if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
-      const rows = await db.all("select code, creator, pct, portal_pin, builtin, active from ambassadors order by active desc, builtin desc, code");
+      const rows = await db.all("select code, creator, pct, discount_pct, portal_pin, builtin, active from ambassadors order by active desc, builtin desc, code");
       const out = [];
       for (const a of rows) {
         const sales = await db.first("select coalesce(sum(total_cents),0) as revenue, count(*) as orders from orders where code=? and status in ('paid','shipped') and coalesce(archived,0)=0", a.code);
         const owedRow = await db.first("select coalesce(sum(case when paid_at is not null then commission_cents else 0 end),0) as owed from orders where code=? and coalesce(archived,0)=0", a.code);
         const paidRow = await db.first("select coalesce(sum(amount_cents),0) as paid from payouts where code=?", a.code);
         out.push({
-          code: a.code, creator: a.creator, pct: a.pct, portalPin: a.portal_pin, builtin: !!a.builtin, active: !!a.active,
+          code: a.code, creator: a.creator, pct: a.pct, discountPct: a.discount_pct, portalPin: a.portal_pin, builtin: !!a.builtin, active: !!a.active,
           orders: (sales && sales.orders) || 0,
           revenueCents: (sales && sales.revenue) || 0,
           owedCents: Math.max(0, ((owedRow && owedRow.owed) || 0) - ((paidRow && paidRow.paid) || 0)),
@@ -884,7 +887,8 @@ export async function onRequest(context) {
       return J({ affiliates: out });
     }
 
-    // Create an affiliate. Commission is clamped server-side to 10% or 15%.
+    // Create an affiliate. Commission (5–40%) and customer discount (0–30%) are
+    // snapped to 5% steps server-side, so a tampered request can't exceed the caps.
     if (path === "/api/marketing/affiliates" && method === "POST") {
       if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
       const code = upper(body.code);
@@ -892,11 +896,13 @@ export async function onRequest(context) {
       const pct = Number(body.pct);
       const portalPin = String(body.portalPin || "").trim();
       if (!creator) return J({ error: "Name required." }, 400);
-      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
-      if (!ALLOWED_COMMISSION.has(pct)) return J({ error: "Commission must be 10% or 15%." }, 400);
+      if (!/^[A-Z0-9]{2,}$/.test(code)) return J({ error: "Code must be 2+ letters/numbers." }, 400);
+      if (!Number.isFinite(pct) || pct <= 0) return J({ error: "Choose a commission." }, 400);
       if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code already exists." }, 409);
-      await db.run("insert into ambassadors (code, creator, pct, portal_pin, builtin, active) values (?, ?, ?, ?, 0, 1)", code, creator, pct, portalPin);
+      const commPct = snap5(pct, MK_COMM_LO, MK_COMM_HI);
+      const discPct = snap5(body.discountPct, MK_DISC_LO, MK_DISC_HI);
+      await db.run("insert into ambassadors (code, creator, pct, discount_pct, portal_pin, builtin, active) values (?, ?, ?, ?, ?, 0, 1)", code, creator, commPct, discPct, portalPin);
       return J({ ok: true });
     }
 
@@ -924,6 +930,20 @@ export async function onRequest(context) {
       return J({ ok: true, active: !!(now && now.active) });
     }
 
+    // Change an affiliate's commission (5–40%) and customer discount (0–30%).
+    // Snapped to 5% steps server-side; built-in codes stay owner-only.
+    if (path === "/api/marketing/affiliate-rates" && method === "POST") {
+      if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(body.code);
+      const row = await db.first("select builtin from ambassadors where code=?", code);
+      if (!row) return J({ error: "No such affiliate." }, 404);
+      if (row.builtin) return J({ error: "Built-in codes are managed from the owner portal." }, 400);
+      const commPct = snap5(body.pct, MK_COMM_LO, MK_COMM_HI);
+      const discPct = snap5(body.discountPct, MK_DISC_LO, MK_DISC_HI);
+      await db.run("update ambassadors set pct=?, discount_pct=? where code=?", commPct, discPct, code);
+      return J({ ok: true, pct: commPct, discountPct: discPct });
+    }
+
     // Promo codes — list, and create constrained to 5-30% in steps of 5.
     if (path === "/api/marketing/promos" && method === "GET") {
       if (!marketingOK(qs.get("pin"))) return J({ error: "unauthorized" }, 401);
@@ -933,7 +953,7 @@ export async function onRequest(context) {
     if (path === "/api/marketing/promos" && method === "POST") {
       if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
       const code = upper(body.code);
-      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (!/^[A-Z0-9]{2,}$/.test(code)) return J({ error: "Code must be 2+ letters/numbers." }, 400);
       if (await db.first("select 1 from promos where code=?", code)) return J({ error: "That code already exists." }, 409);
       // Percentage is constrained server-side to 5-30 in steps of 5, so a tampered
       // request can't create (say) a 90%-off code even though the UI is a dropdown.
@@ -968,7 +988,7 @@ export async function onRequest(context) {
       const pct = Number(body.pct);
       const portalPin = String(body.portalPin || "").trim();
       if (!creator) return J({ error: "Name required." }, 400);
-      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (!/^[A-Z0-9]{2,}$/.test(code)) return J({ error: "Code must be 2+ letters/numbers." }, 400);
       if (!Number.isFinite(pct) || pct < 0 || pct > 1) return J({ error: "pct must be 0–1 (e.g. 0.10)." }, 400);
       if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code already exists." }, 409);
@@ -980,8 +1000,21 @@ export async function onRequest(context) {
       const code = upper(decodeURIComponent(path.split("/").pop()));
       const row = await db.first("select builtin from ambassadors where code=?", code);
       if (!row) return J({ error: "not found" }, 404);
-      if (row.builtin) return J({ error: "Built-in ambassadors can't be removed." }, 400);
+      if (row.builtin) return J({ error: "Built-in affiliates can't be removed." }, 400);
       await db.run("delete from ambassadors where code=?", code);
+      return J({ ok: true });
+    }
+    // Owner: change any ambassador's commission and customer discount (0–100%, uncapped).
+    if (path === "/api/owner/ambassador-rates" && method === "POST") {
+      if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
+      const code = upper(body.code);
+      const pct = Number(body.pct);
+      const disc = Number(body.discountPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 1) return J({ error: "Commission must be 0–100%." }, 400);
+      if (!Number.isFinite(disc) || disc < 0 || disc > 1) return J({ error: "Discount must be 0–100%." }, 400);
+      const row = await db.first("select 1 from ambassadors where code=?", code);
+      if (!row) return J({ error: "not found" }, 404);
+      await db.run("update ambassadors set pct=?, discount_pct=? where code=?", pct, disc, code);
       return J({ ok: true });
     }
 
@@ -1255,7 +1288,7 @@ export async function onRequest(context) {
       await sendEmail(env, {
         to: OWNER_EMAIL,
         subject: `New order ${reference} — ${totalStr}`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New order ${reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(body.email || "no email")}&gt;</p><p style="margin:0 0 4px"><b>Payment:</b> ${esc(methodLabel)}${code ? ` &nbsp; <b>Ambassador:</b> ${esc(code)}` : ""}</p>${table}<p style="color:#555">Send this customer their payment instructions to complete the order.</p></div>`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:560px"><h2 style="margin:0 0 6px">New order ${reference}</h2><p style="margin:0 0 4px"><b>Customer:</b> ${esc(custName)} &lt;${esc(body.email || "no email")}&gt;</p><p style="margin:0 0 4px"><b>Payment:</b> ${esc(methodLabel)}${code ? ` &nbsp; <b>Affiliate:</b> ${esc(code)}` : ""}</p>${table}<p style="color:#555">Send this customer their payment instructions to complete the order.</p></div>`,
       });
       if (body.email) {
         const pay = PAY[body.method];
@@ -1283,6 +1316,17 @@ export async function onRequest(context) {
       if (await db.first("select 1 from users where email=?", email)) return J({ error: "An account with that email already exists." }, 409);
       const salt = crypto.getRandomValues(new Uint8Array(16));
       await db.run("insert into users (email, password_hash, salt) values (?, ?, ?)", email, await pbkdf2(pw, salt), b64(salt));
+      // Add the account email to the marketing list when the person opted in at
+      // signup. Email-only row (phone stays null); dedupes on the email index.
+      if (body.subscribe) {
+        try {
+          const ipHash = (await hmac(APP_SECRET, "ip:" + (request.headers.get("cf-connecting-ip") || "unknown"))).slice(0, 32);
+          await db.run(
+            "insert into subscribers (phone, email, consent_text, source, ip_hash) values (NULL, ?, ?, 'account', ?) on conflict(email) do update set unsubscribed_at=NULL",
+            email, String(body.consentText || "Opted in to marketing emails during account signup.").slice(0, 400), ipHash
+          );
+        } catch (_) { /* never block account creation over the marketing list */ }
+      }
       return J({ email, token: await signToken(APP_SECRET, email) });
     }
     if (path === "/api/auth/login" && method === "POST") {
@@ -1301,7 +1345,7 @@ export async function onRequest(context) {
     }
     if (path === "/api/ambassador" && method === "POST") {
       await db.run("insert into ambassador_applications (name, email, platform, handle, followers, niche, why) values (?, ?, ?, ?, ?, ?, ?)", body.name || null, body.email || null, body.platform || null, body.handle || null, body.followers || null, body.niche || null, body.why || null);
-      await sendEmail(env, { to: OWNER_EMAIL, subject: `New ambassador application: ${body.name || ""}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><p><b>${esc(body.name)}</b> &lt;${esc(body.email)}&gt;</p><p><b>Platform:</b> ${esc(body.platform)} — ${esc(body.handle)} (${esc(body.followers)} followers)</p><p><b>Niche:</b> ${esc(body.niche)}</p><p style="white-space:pre-wrap">${esc(body.why)}</p></div>` });
+      await sendEmail(env, { to: OWNER_EMAIL, subject: `New affiliate application: ${body.name || ""}`, html: `<div style="font-family:Arial,sans-serif;max-width:560px"><p><b>${esc(body.name)}</b> &lt;${esc(body.email)}&gt;</p><p><b>Platform:</b> ${esc(body.platform)} — ${esc(body.handle)} (${esc(body.followers)} followers)</p><p><b>Niche:</b> ${esc(body.niche)}</p><p style="white-space:pre-wrap">${esc(body.why)}</p></div>` });
       return J({ ok: true });
     }
 
@@ -1324,7 +1368,7 @@ export async function onRequest(context) {
 
 // ── Owner dashboard aggregation ─────────────────────────────────────────
 async function ownerOverview(db, PREORDER) {
-  const codes = await db.all("select code, creator, pct, builtin from ambassadors where active=1 order by builtin desc, code");
+  const codes = await db.all("select code, creator, pct, discount_pct, builtin from ambassadors where active=1 order by builtin desc, code");
   try { await db.run("alter table orders add column archived integer not null default 0"); } catch (_) { /* column already exists */ }
   const t = (await db.first(`
     select
@@ -1351,7 +1395,7 @@ async function ownerOverview(db, PREORDER) {
   const payoutRequests = await db.all("select id, code, creator, amount_cents, method, details, created_at from payout_requests where status='pending' order by created_at desc");
   return {
     preorder: PREORDER, commissionPct: 0.10, payoutRequests,
-    codes: codes.map((c) => ({ code: c.code, creator: c.creator, pct: c.pct, builtin: !!c.builtin })),
+    codes: codes.map((c) => ({ code: c.code, creator: c.creator, pct: c.pct, discountPct: c.discount_pct, builtin: !!c.builtin })),
     paidOrders: t.paid_orders || 0, paidSalesCents: t.paid_sales || 0,
     commissionOwedCents: Math.max(0, (t.commission_total || 0) - paidOutTotal),
     pendingOrders: t.pending_orders || 0, pendingSalesCents: t.pending_sales || 0,
