@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-10-09.2";
+const BACKEND_VERSION = "2026-10-09.3";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -657,7 +657,7 @@ export async function onRequest(context) {
     if (path === "/api/owner/promos" && method === "POST") {
       if (!ownerOK(body.pin)) return J({ error: "unauthorized" }, 401);
       const code = upper(String(body.code || "").trim());
-      if (!/^[A-Z0-9]{3,20}$/.test(code)) return J({ error: "Code must be 3–20 letters or numbers." }, 400);
+      if (!/^[A-Z0-9]{2,20}$/.test(code)) return J({ error: "Code must be 2–20 letters or numbers." }, 400);
       const kind = ["pct", "amount", "freeship"].includes(body.kind) ? body.kind : "pct";
       let value = Math.max(0, Math.floor(Number(body.value) || 0));
       // Owner percentage promos are capped at 10%. (Fixed-amount and free-shipping
