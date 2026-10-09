@@ -306,12 +306,12 @@ const FONTS = (
 );
 
 const BASE_PRODUCTS = [
-  { id: "p03", no: "01", name: "GLP-1 SM", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 89.99, batchPrefix: "SMG-0741" },
+  { id: "p03", no: "01", name: "GLP-1 SM", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 79.99, batchPrefix: "SMG-0741" },
   { id: "p04", no: "02", name: "GLP-2 TZ", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 64.99, batchPrefix: "TZP-0512", sizes: [{ mg: 10, price: 64.99 }, { mg: 20, price: 94.99 }] },
   { id: "p21", no: "03", name: "GLP-3 RT", form: "Lyophilized Powder", purity: "99.8%", baseMg: 10, basePrice: 79.99, batchPrefix: "RET-3318", sizes: [{ mg: 10, price: 79.99 }, { mg: 20, price: 129.99 }] },
   { id: "p01", no: "04", name: "BPC-157", form: "Lyophilized Powder", purity: "99.1%", baseMg: 10, basePrice: 44.99, batchPrefix: "BPC-2206" },
   { id: "p02", no: "05", name: "TB-500", form: "Lyophilized Powder", purity: "99.0%", baseMg: 10, basePrice: 54.99, batchPrefix: "TB4-1190" },
-  { id: "p29", no: "06", name: "BPC-157 + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 119.99, batchPrefix: "BTB-2210" },
+  { id: "p29", no: "06", name: "BPC-157 + TB-500", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 10, basePrice: 98.99, batchPrefix: "BTB-2210" },
   { id: "p34", no: "07", name: "BPC-157 + GHK-Cu + TB-500 (GLOW)", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 70, basePrice: 109.99, batchPrefix: "TRI-7010" },
   { id: "p35", no: "08", name: "BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)", form: "Lyophilized Powder (Blend)", purity: "99.0%", baseMg: 75, basePrice: 139.99, batchPrefix: "KLW-3512" },
   { id: "p08", no: "08", name: "GHK-Cu", form: "Lyophilized Powder", purity: "99.2%", baseMg: 100, basePrice: 64.99, batchPrefix: "GHK-1075" },
@@ -5213,7 +5213,7 @@ function OwnerPortal({ setPage }) {
     const discount = parseFloat(newAmb.discount);
     const portalPin = newAmb.pin.trim();
     if (!creator) { setAmbError("Enter the affiliate's name."); return; }
-    if (!/^[A-Z0-9]{3,}$/.test(code)) { setAmbError("Code must be 3+ letters/numbers, no spaces."); return; }
+    if (!/^[A-Z0-9]{2,}$/.test(code)) { setAmbError("Code must be 2+ letters/numbers, no spaces."); return; }
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setAmbError("Commission must be between 0 and 100%."); return; }
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) { setAmbError("Customer discount must be between 0 and 100%."); return; }
     if (!/^[0-9]{4,}$/.test(portalPin)) { setAmbError("PIN must be at least 4 digits."); return; }
