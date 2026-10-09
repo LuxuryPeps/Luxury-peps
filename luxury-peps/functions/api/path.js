@@ -13,14 +13,14 @@
 // ===========================================================================
 
 // ── Catalog (variant id → price). Keep in sync with the storefront. ─────────
-const VARIANTS = {"p03-A":{"name":"GLP-1 SM","cents":8999},"p04-A":{"name":"GLP-2 TZ","cents":6499},"p04-B":{"name":"GLP-2 TZ","cents":9499},"p21-A":{"name":"GLP-3 RT","cents":7999},"p21-B":{"name":"GLP-3 RT","cents":12999},"p01-A":{"name":"BPC-157","cents":4499},"p02-A":{"name":"TB-500","cents":5499},"p29-A":{"name":"BPC-157 + TB-500","cents":11999},"p34-A":{"name":"BPC-157 + GHK-Cu + TB-500 (GLOW)","cents":10999},"p35-A":{"name":"BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)","cents":13999},"p08-A":{"name":"GHK-Cu","cents":6499},"p07-A":{"name":"Melanotan II","cents":4499},"p28-A":{"name":"Glutathione","cents":7199},"p05-A":{"name":"Ipamorelin","cents":3999},"p05-B":{"name":"Ipamorelin","cents":5999},"p06-A":{"name":"CJC-1295 (No DAC)","cents":6599},"p33-A":{"name":"CJC-1295 + Ipamorelin","cents":8199},"p15-A":{"name":"Sermorelin","cents":5999},"p31-A":{"name":"Tesamorelin","cents":5499},"p31-B":{"name":"Tesamorelin","cents":7499},"p32-A":{"name":"IGF-1 LR3","cents":8499},"p09-A":{"name":"Epithalon","cents":6099},"p19-A":{"name":"MOTS-c","cents":4899},"p24-A":{"name":"SS-31","cents":7999},"p22-A":{"name":"NAD+","cents":5999},"p25-A":{"name":"VIP","cents":6999},"p11-A":{"name":"Selank","cents":3899},"p12-A":{"name":"Semax","cents":3999},"p23-A":{"name":"Oxytocin Acetate","cents":5399},"p26-A":{"name":"5-Amino-1MQ","cents":6999},"p30-A":{"name":"HCG","cents":9499},"p27-A":{"name":"Bacteriostatic Water","cents":1499}};
+const VARIANTS = {"p03-A":{"name":"GLP-1 SM","cents":7999},"p04-A":{"name":"GLP-2 TZ","cents":6499},"p04-B":{"name":"GLP-2 TZ","cents":9499},"p21-A":{"name":"GLP-3 RT","cents":7999},"p21-B":{"name":"GLP-3 RT","cents":12999},"p01-A":{"name":"BPC-157","cents":4499},"p02-A":{"name":"TB-500","cents":5499},"p29-A":{"name":"BPC-157 + TB-500","cents":9899},"p34-A":{"name":"BPC-157 + GHK-Cu + TB-500 (GLOW)","cents":10999},"p35-A":{"name":"BPC-157 + GHK-Cu + TB-500 + KPV (KLOW)","cents":13999},"p08-A":{"name":"GHK-Cu","cents":6499},"p07-A":{"name":"Melanotan II","cents":4499},"p28-A":{"name":"Glutathione","cents":7199},"p05-A":{"name":"Ipamorelin","cents":3999},"p05-B":{"name":"Ipamorelin","cents":5999},"p06-A":{"name":"CJC-1295 (No DAC)","cents":6599},"p33-A":{"name":"CJC-1295 + Ipamorelin","cents":8199},"p15-A":{"name":"Sermorelin","cents":5999},"p31-A":{"name":"Tesamorelin","cents":5499},"p31-B":{"name":"Tesamorelin","cents":7499},"p32-A":{"name":"IGF-1 LR3","cents":8499},"p09-A":{"name":"Epithalon","cents":6099},"p19-A":{"name":"MOTS-c","cents":4899},"p24-A":{"name":"SS-31","cents":7999},"p22-A":{"name":"NAD+","cents":5999},"p25-A":{"name":"VIP","cents":6999},"p11-A":{"name":"Selank","cents":3899},"p12-A":{"name":"Semax","cents":3999},"p23-A":{"name":"Oxytocin Acetate","cents":5399},"p26-A":{"name":"5-Amino-1MQ","cents":6999},"p30-A":{"name":"HCG","cents":9499},"p27-A":{"name":"Bacteriostatic Water","cents":1499}};
 
 const QTY_BREAKS = [{ min: 5, pct: 0.15 }, { min: 3, pct: 0.10 }, { min: 2, pct: 0.05 }];
 const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) return b.pct; return 0; };
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-09-23.2";
+const BACKEND_VERSION = "2026-10-09.2";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -896,7 +896,7 @@ export async function onRequest(context) {
       const pct = Number(body.pct);
       const portalPin = String(body.portalPin || "").trim();
       if (!creator) return J({ error: "Name required." }, 400);
-      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (!/^[A-Z0-9]{2,}$/.test(code)) return J({ error: "Code must be 2+ letters/numbers." }, 400);
       if (!Number.isFinite(pct) || pct <= 0) return J({ error: "Choose a commission." }, 400);
       if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code already exists." }, 409);
@@ -953,7 +953,7 @@ export async function onRequest(context) {
     if (path === "/api/marketing/promos" && method === "POST") {
       if (!marketingOK(body.pin)) return J({ error: "unauthorized" }, 401);
       const code = upper(body.code);
-      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (!/^[A-Z0-9]{2,}$/.test(code)) return J({ error: "Code must be 2+ letters/numbers." }, 400);
       if (await db.first("select 1 from promos where code=?", code)) return J({ error: "That code already exists." }, 409);
       // Percentage is constrained server-side to 5-30 in steps of 5, so a tampered
       // request can't create (say) a 90%-off code even though the UI is a dropdown.
@@ -988,7 +988,7 @@ export async function onRequest(context) {
       const pct = Number(body.pct);
       const portalPin = String(body.portalPin || "").trim();
       if (!creator) return J({ error: "Name required." }, 400);
-      if (!/^[A-Z0-9]{3,}$/.test(code)) return J({ error: "Code must be 3+ letters/numbers." }, 400);
+      if (!/^[A-Z0-9]{2,}$/.test(code)) return J({ error: "Code must be 2+ letters/numbers." }, 400);
       if (!Number.isFinite(pct) || pct < 0 || pct > 1) return J({ error: "pct must be 0–1 (e.g. 0.10)." }, 400);
       if (!/^[0-9]{4,}$/.test(portalPin)) return J({ error: "PIN must be 4+ digits." }, 400);
       if (await db.first("select 1 from ambassadors where code=?", code)) return J({ error: "That code already exists." }, 409);
