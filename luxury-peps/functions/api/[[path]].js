@@ -20,7 +20,7 @@ const qtyDiscountPct = (q) => { for (const b of QTY_BREAKS) if (q >= b.min) retu
 const FREE_SHIP = 15000, FLAT_SHIP = 1200;
 // Bump when this file changes. Surfaced in owner Diagnostics so you can confirm
 // which version of the backend is actually deployed.
-const BACKEND_VERSION = "2026-10-09.3";
+const BACKEND_VERSION = "2026-10-09.4";
 // Owner notifications go here. Prefer the OWNER_EMAIL environment variable, but
 // fall back to the business address so a missing variable can never silently
 // swallow order, contact, application, payout, and review notifications.
@@ -1074,7 +1074,7 @@ export async function onRequest(context) {
     const creatorMatch = path.match(/^\/api\/creator\/([^/]+)\/stats$/);
     if (creatorMatch && method === "GET") {
       const code = upper(decodeURIComponent(creatorMatch[1]));
-      const amb = await db.first("select code, creator, pct, portal_pin from ambassadors where code=? and active=1", code);
+      const amb = await db.first("select code, creator, pct, discount_pct, portal_pin from ambassadors where code=? and active=1", code);
       if (!amb) return J({ error: "not found" }, 404);
       if (String(qs.get("pin") || "").trim() !== amb.portal_pin) return J({ error: "unauthorized" }, 401);
       return J(await creatorStats(db, amb));
@@ -1420,7 +1420,7 @@ async function creatorStats(db, amb) {
   const recent = await db.all("select reference as id, status, total_cents, commission_cents from orders where code=? and coalesce(archived,0)=0 order by created_at desc limit 12", amb.code);
   const dayRows = await db.all("select date(paid_at) as day, sum(commission_cents) as cents from orders where code=? and paid_at is not null and coalesce(archived,0)=0 group by date(paid_at)", amb.code);
   return {
-    code: amb.code, creator: amb.creator, discountPct: amb.pct, commissionPct: 0.10,
+    code: amb.code, creator: amb.creator, discountPct: (typeof amb.discount_pct === "number" ? amb.discount_pct : 0.10), commissionPct: amb.pct,
     paid: { orders: t.paid_orders || 0, salesCents: t.paid_sales || 0, commissionCents: t.paid_comm || 0 },
     pending: { orders: t.pend_orders || 0, salesCents: t.pend_sales || 0, commissionCents: t.pend_comm || 0 },
     totalOrders: t.total_orders || 0, recent, series: series14(dayRows, "commission_cents"),
